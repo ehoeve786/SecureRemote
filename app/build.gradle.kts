@@ -9,7 +9,7 @@ android {
     compileSdk = 36
     defaultConfig {
         applicationId = "com.secrm"
-        minSdk = 26
+        minSdk = 30 // auth-bound Keystore key (setUserAuthenticationParameters)
         targetSdk = 34
         versionCode = 1
         versionName = "1.0.0"
@@ -45,6 +45,8 @@ dependencies {
     implementation("androidx.navigation:navigation-compose:2.8.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+    implementation("androidx.biometric:biometric:1.1.0")
+    implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
 
     implementation(project(":core:design"))
     implementation(project(":core:security"))

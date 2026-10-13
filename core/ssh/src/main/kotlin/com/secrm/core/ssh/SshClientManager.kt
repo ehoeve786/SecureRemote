@@ -54,16 +54,6 @@ class SshClientManager {
                         a.passphrase?.toByteArray(StandardCharsets.US_ASCII)
                     )
                 }
-                is SshAuth.Agent -> {
-                    val connector = com.jcraft.jsch.TcpAgentConnector(a.host, a.port)
-                    val repo = com.jcraft.jsch.AgentIdentityRepository(connector)
-                    jsch.setIdentityRepository(repo)
-                }
-                is SshAuth.UnixAgent -> {
-                    throw UnsupportedOperationException(
-                        "Unix-socket agent not supported. Use Agent (TCP)."
-                    )
-                }
                 is SshAuth.Password -> { /* handled below */ }
             }
 

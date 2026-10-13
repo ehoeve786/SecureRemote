@@ -13,4 +13,5 @@ data class SavedKey(
     // "ssh.key.<id>.pem" so the list view never deserializes secrets.
 )
 
+/** AGENT = SSH key item from the Bitwarden vault (keyId holds the item id). */
 enum class AuthMethod { PASSWORD, SAVED_KEY, AGENT }

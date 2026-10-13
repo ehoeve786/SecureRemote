@@ -27,4 +27,7 @@ interface SavedConnections {
 
     /** Passphrase for a saved key id, or empty. */
     fun keyPassphraseFor(keyId: String): String?
+
+    /** Private key of a Bitwarden SSH-key item, or null while the vault is locked. */
+    fun bitwardenKeyFor(itemId: String): String?
 }

@@ -11,6 +11,7 @@ import com.secrm.core.ssh.SshClientManager
 import com.secrm.core.ssh.tools.SshTools
 import com.secrm.core.tunnel.MockTunnel
 import com.secrm.core.tunnel.Tunnel
+import com.secrm.data.BitwardenVault
 import com.secrm.data.ConnectionRepository
 import com.secrm.data.KeyRepository
 import kotlinx.serialization.json.JsonObject
@@ -23,6 +24,7 @@ class SecureRemoteApp : Application() {
     lateinit var dispatcher: CallDispatcher; private set
     lateinit var connections: ConnectionRepository; private set
     lateinit var keys: KeyRepository; private set
+    lateinit var vault: BitwardenVault; private set
 
     override fun onCreate() {
         super.onCreate()
@@ -31,7 +33,8 @@ class SecureRemoteApp : Application() {
         ssh = SshClientManager()
         audit = McpAuditLog(this)
         keys = KeyRepository(config)
-        connections = ConnectionRepository(config, keys)
+        vault = BitwardenVault(config)
+        connections = ConnectionRepository(config, keys, vault)
         dispatcher = CallDispatcher(object : CallDispatcher.AuditSink {
             override suspend fun record(
                 s: Session, tool: String, args: JsonObject, result: ToolResult

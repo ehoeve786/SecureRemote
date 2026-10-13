@@ -19,6 +19,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.fragment.app.FragmentActivity
+import com.secrm.data.authenticate
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.secrm.SecureRemoteApp
@@ -39,6 +42,7 @@ fun DashboardScreen(
 ) {
     val sshState by app.ssh.state.collectAsState()
     val scope = rememberCoroutineScope()
+    val activity = LocalContext.current as FragmentActivity
 
     var connections by remember { mutableStateOf(app.connections.list()) }
     var editing by remember { mutableStateOf<SavedConnection?>(null) }
@@ -185,11 +189,15 @@ fun DashboardScreen(
                                                     ?.takeIf { it.isNotBlank() }
                                             )
                                         }
-                                        AuthMethod.AGENT ->
-                                            SshAuth.Agent("127.0.0.1", 6000)
+                                        AuthMethod.AGENT -> {
+                                            runCatching { app.vault.ensureUnlocked { activity.authenticate() } }
+                                                .onFailure { connectError = it.message }
+                                            conn.keyId?.let(app.vault::privateKey)
+                                                ?.let { SshAuth.Key(pem = it, passphrase = null) }
+                                        }
                                     }
                                     if (auth == null) {
-                                        connectError = "Missing credentials for ${conn.name}"
+                                        connectError = connectError ?: "Missing credentials for ${conn.name}"
                                         activeName = null
                                         connecting = null
                                         return@launch
@@ -375,11 +383,14 @@ private fun ConnectionFormSheet(
     var canRead by remember { mutableStateOf(initial?.allowMcpRead ?: true) }
 
     val savedKeys = remember { app.keys.list() }
+    var bwKeys by remember { mutableStateOf(app.vault.keys) }
+    val scope = rememberCoroutineScope()
+    val activity = LocalContext.current as FragmentActivity
+    fun pick(m: AuthMethod) { if (m != authMethod) keyId = null; authMethod = m }
     val valid = name.isNotBlank() && host.isNotBlank() && user.isNotBlank() &&
         when (authMethod) {
             AuthMethod.PASSWORD -> password.isNotBlank()
-            AuthMethod.SAVED_KEY -> keyId != null
-            AuthMethod.AGENT -> true
+            AuthMethod.SAVED_KEY, AuthMethod.AGENT -> keyId != null
         }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
@@ -423,13 +434,13 @@ private fun ConnectionFormSheet(
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 AuthTab("Password", authMethod == AuthMethod.PASSWORD, Modifier.weight(1f)) {
-                    authMethod = AuthMethod.PASSWORD
+                    pick(AuthMethod.PASSWORD)
                 }
                 AuthTab("Key", authMethod == AuthMethod.SAVED_KEY, Modifier.weight(1f)) {
-                    authMethod = AuthMethod.SAVED_KEY
+                    pick(AuthMethod.SAVED_KEY)
                 }
-                AuthTab("Agent", authMethod == AuthMethod.AGENT, Modifier.weight(1f)) {
-                    authMethod = AuthMethod.AGENT
+                AuthTab("Bitwarden", authMethod == AuthMethod.AGENT, Modifier.weight(1f)) {
+                    pick(AuthMethod.AGENT)
                 }
             }
 
@@ -441,21 +452,34 @@ private fun ConnectionFormSheet(
                         modifier = Modifier.fillMaxWidth())
                 }
 
-                AuthMethod.SAVED_KEY -> {
-                    if (savedKeys.isEmpty()) {
+                AuthMethod.SAVED_KEY, AuthMethod.AGENT -> {
+                    val options = if (authMethod == AuthMethod.SAVED_KEY) savedKeys.map { it.id to it.name }
+                        else bwKeys?.map { it.id to it.name }.orEmpty()
+                    if (options.isEmpty()) {
                         Text(
-                            "No saved keys. Open Settings → SSH Keys to import one.",
+                            when {
+                                authMethod == AuthMethod.SAVED_KEY -> "No saved keys. Open Settings → SSH Keys to import one."
+                                !app.vault.isConfigured -> "Sign in under Settings → Bitwarden first."
+                                bwKeys == null -> "Bitwarden is locked."
+                                else -> "No SSH keys in your Bitwarden vault."
+                            },
                             style = SecrmType.Caption, color = Palette.Warning
                         )
+                        if (authMethod == AuthMethod.AGENT && app.vault.isConfigured && bwKeys == null)
+                            PillButton("Unlock Bitwarden", PillStyle.Primary, Modifier.fillMaxWidth()) {
+                                scope.launch {
+                                    runCatching { app.vault.ensureUnlocked { activity.authenticate() } }
+                                    bwKeys = app.vault.keys
+                                }
+                            }
                     } else {
                         var expanded by remember { mutableStateOf(false) }
-                        val selected = savedKeys.firstOrNull { it.id == keyId }
                         Box {
                             OutlinedButton(
                                 onClick = { expanded = true },
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Text(selected?.name ?: "Select key…",
+                                Text(options.firstOrNull { it.first == keyId }?.second ?: "Select key…",
                                     color = Palette.TextPrimary)
                             }
                             DropdownMenu(
@@ -463,33 +487,13 @@ private fun ConnectionFormSheet(
                                 onDismissRequest = { expanded = false },
                                 containerColor = Palette.Surface2
                             ) {
-                                savedKeys.forEach { k ->
+                                options.forEach { (id, label) ->
                                     DropdownMenuItem(
-                                        text = { Text(k.name, color = Palette.TextPrimary) },
-                                        onClick = { keyId = k.id; expanded = false }
+                                        text = { Text(label, color = Palette.TextPrimary) },
+                                        onClick = { keyId = id; expanded = false }
                                     )
                                 }
                             }
-                        }
-                    }
-                }
-
-                AuthMethod.AGENT -> {
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = Palette.Surface2),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(Modifier.padding(Space.md),
-                            verticalArrangement = Arrangement.spacedBy(Space.xs)) {
-                            Text("Bitwarden SSH agent",
-                                style = SecrmType.Label, color = Palette.TextPrimary,
-                                fontWeight = FontWeight.Medium)
-                            Text(
-                                "Requires Bitwarden + Termux. Set up the agent once in " +
-                                "Settings → SSH Keys → Agent Setup, then every connection " +
-                                "with this auth method will use it automatically.",
-                                style = SecrmType.Caption, color = Palette.TextSecondary
-                            )
                         }
                     }
                 }
@@ -518,7 +522,7 @@ private fun ConnectionFormSheet(
                         user = user.trim(),
                         authMethod = authMethod,
                         password = if (authMethod == AuthMethod.PASSWORD) password else "",
-                        keyId = if (authMethod == AuthMethod.SAVED_KEY) keyId else null,
+                        keyId = if (authMethod != AuthMethod.PASSWORD) keyId else null,
                         allowMcpExec = canExec,
                         allowMcpRead = canRead
                     ))

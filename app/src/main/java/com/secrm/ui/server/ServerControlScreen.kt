@@ -23,7 +23,7 @@ import com.secrm.core.tunnel.Tunnel
 import com.secrm.core.tunnel.TunnelConfig
 import com.secrm.design.*
 import com.secrm.service.McpServerService
-import com.secrm.ui.agent.AgentSetupScreen
+import com.secrm.ui.agent.BitwardenScreen
 import com.secrm.ui.keys.KeyManagementScreen
 import kotlinx.coroutines.launch
 
@@ -35,7 +35,7 @@ fun ServerControlScreen(app: SecureRemoteApp, onBack: () -> Unit) {
     var showKeys by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
-    if (showAgent) { AgentSetupScreen(onBack = { showAgent = false }); return }
+    if (showAgent) { BitwardenScreen(app, onBack = { showAgent = false }); return }
     if (showKeys) { KeyManagementScreen(app, onBack = { showKeys = false }); return }
 
     Scaffold(
@@ -342,17 +342,17 @@ private fun AboutSection() {
 private fun AgentEntryCard(onOpen: () -> Unit) {
     GlassCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(Space.lg)) {
-            Text("Bitwarden SSH agent",
+            Text("Bitwarden",
                 style = SecrmType.Body.copy(fontWeight = FontWeight.Medium),
                 color = Palette.TextPrimary)
             Spacer(Modifier.height(Space.xs))
             Text(
-                "Sign SSH challenges without exposing private keys to this app. " +
-                "Requires Bitwarden + Termux on the same device.",
+                "Use SSH keys stored in your Bitwarden vault. Unlocks with " +
+                "fingerprint; keys stay in memory only.",
                 style = SecrmType.Body, color = Palette.TextSecondary
             )
             Spacer(Modifier.height(Space.md))
-            PillButton("Set up agent", PillStyle.Primary, Modifier.fillMaxWidth()) { onOpen() }
+            PillButton("Open", PillStyle.Primary, Modifier.fillMaxWidth()) { onOpen() }
         }
     }
 }

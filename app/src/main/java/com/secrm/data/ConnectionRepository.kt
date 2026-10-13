@@ -9,7 +9,8 @@ import kotlinx.serialization.json.Json
 
 class ConnectionRepository(
     private val config: EncryptedConfigStore,
-    private val keys: KeyRepository
+    private val keys: KeyRepository,
+    private val vault: BitwardenVault
 ) : SavedConnections {
 
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
@@ -52,4 +53,6 @@ class ConnectionRepository(
 
     override fun keyPassphraseFor(keyId: String): String? =
         keys.find(keyId)?.passphrase
+
+    override fun bitwardenKeyFor(itemId: String): String? = vault.privateKey(itemId)
 }

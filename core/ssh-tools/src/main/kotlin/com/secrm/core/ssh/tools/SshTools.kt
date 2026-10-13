@@ -84,9 +84,12 @@ object SshTools {
                             val pass = saved.keyPassphraseFor(keyId)?.takeIf { it.isNotBlank() }
                             SshAuth.Key(pem = pem, passphrase = pass)
                         }
-                        AuthMethod.AGENT -> return ToolResult.error("agent_unsupported",
-                            "Agent auth is disabled in this build. Use a saved key.",
-                            "Agent auth not yet enabled.")
+                        AuthMethod.AGENT -> SshAuth.Key(
+                            pem = conn.keyId?.let(saved::bitwardenKeyFor)
+                                ?: return ToolResult.error("vault_locked",
+                                    "Unlock Bitwarden in the SecureRemote app.",
+                                    "Bitwarden key for '$name' is unavailable (vault locked)."),
+                            passphrase = null)
                     }
 
                     val ok = ssh.connect(SshConfig(
