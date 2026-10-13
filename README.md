@@ -20,11 +20,7 @@ Ktor CIO, AndroidX Security-Crypto.
 - core:server-http — Ktor host, loopback-only, bearer auth
 
 ## Build
-    gradle :app:assembleDebug
-
-## Termux
-Ensure `~/.gradle/gradle.properties` contains:
-    android.aapt2FromMavenOverride=/data/data/com.termux/files/usr/bin/aapt2
+GitHub Actions builds every push; the debug APK is attached to each run as `app-debug`.
 
 ## License
 Apache-2.0
