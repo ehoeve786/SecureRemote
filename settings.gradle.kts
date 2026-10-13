@@ -12,6 +12,6 @@ rootProject.name = "SecureRemoteManager"
 include(":app")
 include(
     ":core:design", ":core:security", ":core:tunnel", ":core:ssh",
-    ":core:domain", ":core:ssh-tools",
+    ":core:domain", ":core:ssh-tools", ":core:terminal",
     ":core:server-mcp", ":core:server-http", ":core:mcp"
 )

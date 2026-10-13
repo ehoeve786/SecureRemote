@@ -91,6 +91,8 @@ class SshClientManager {
         }
     }
 
+    fun resizePty(cols: Int, rows: Int, w: Int, h: Int) { runCatching { shell?.setPtySize(cols, rows, w, h) } }
+
     suspend fun ensureShell(): Boolean = withContext(Dispatchers.IO) {
         if (shell?.isConnected == true) return@withContext true
         val s = session ?: return@withContext false

@@ -6,7 +6,7 @@ plugins {
 }
 android {
     namespace = "com.secrm"
-    compileSdk = 34
+    compileSdk = 36
     defaultConfig {
         applicationId = "com.secrm"
         minSdk = 26
@@ -18,7 +18,6 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions { jvmTarget = "17" }
     buildFeatures { compose = true }
     packaging {
         resources.excludes += setOf(
@@ -34,7 +33,7 @@ android {
     }
 }
 dependencies {
-    val bom = platform("androidx.compose:compose-bom:2024.09.00")
+    val bom = platform("androidx.compose:compose-bom:2026.06.01")
     implementation(bom)
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
@@ -58,3 +57,4 @@ dependencies {
     implementation(project(":core:server-http"))
     implementation(project(":core:mcp"))
 }
+kotlin { compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) } }
