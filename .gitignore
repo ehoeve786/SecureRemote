@@ -9,3 +9,4 @@ captures/
 libs/*.aar
 !libs/.gitkeep
 .kotlin/
+signing.jks

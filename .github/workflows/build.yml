@@ -12,7 +12,13 @@ jobs:
         with: { distribution: temurin, java-version: '17' }
       - uses: gradle/actions/setup-gradle@v5
         with: { gradle-version: "8.14.3" }
-      - run: set -o pipefail; gradle :app:assembleDebug --no-daemon 2>&1 | tee build.log
+      - name: Signing key
+        env: { KS: "${{ secrets.SIGNING_KEYSTORE }}" }
+        run: |
+          [ -n "$KS" ] || { echo "::error::Add SIGNING_KEYSTORE and SIGNING_PASSWORD repo secrets"; exit 1; }
+          echo "$KS" | base64 -d > signing.jks
+      - env: { SIGNING_PASSWORD: "${{ secrets.SIGNING_PASSWORD }}" }
+        run: set -o pipefail; gradle :app:assembleDebug --no-daemon 2>&1 | tee build.log
       - if: failure()
         run: |
           grep -E '^e: |What went wrong' -A2 build.log | head -40 | sed 's/^/::error::/'

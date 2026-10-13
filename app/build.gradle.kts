@@ -11,7 +11,7 @@ android {
         applicationId = "com.secrm"
         minSdk = 30 // auth-bound Keystore key (setUserAuthenticationParameters)
         targetSdk = 34
-        versionCode = 1
+        versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toInt() ?: 1
         versionName = "1.0.0"
     }
     compileOptions {
@@ -19,6 +19,14 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     buildFeatures { compose = true }
+    // CI signs with one fixed key (from repo secrets) so builds update in place.
+    System.getenv("SIGNING_PASSWORD")?.let { pw ->
+        val ci = signingConfigs.create("ci") {
+            storeFile = rootProject.file("signing.jks")
+            storePassword = pw; keyAlias = "secrm"; keyPassword = pw
+        }
+        buildTypes.getByName("debug").signingConfig = ci
+    }
     packaging {
         resources.excludes += setOf(
             "META-INF/versions/**/OSGI-INF/MANIFEST.MF",
