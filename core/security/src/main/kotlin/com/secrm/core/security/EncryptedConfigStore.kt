@@ -24,6 +24,8 @@ class EncryptedConfigStore(context: Context) {
         get() = get("ssh.user"); set(v) = put("ssh.user", v ?: "")
     var sshPassword: String?
         get() = get("ssh.pass"); set(v) = put("ssh.pass", v ?: "")
+    var sshConnectionsJson: String?
+        get() = get("ssh.connections"); set(v) = put("ssh.connections", v ?: "")
     var mcpBearerToken: String?
         get() = get("mcp.tok"); set(v) = put("mcp.tok", v ?: "")
 }

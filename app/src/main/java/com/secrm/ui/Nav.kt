@@ -10,11 +10,11 @@ import com.secrm.SecureRemoteApp
 import com.secrm.design.Motion
 import com.secrm.ui.dashboard.DashboardScreen
 import com.secrm.ui.server.ServerControlScreen
-import com.secrm.ui.shell.QuickShellScreen
+import com.secrm.ui.terminal.TerminalScreen
 
 object Routes {
     const val Dashboard = "dashboard"
-    const val Server = "server"
+    const val Settings = "settings"
     const val Shell = "shell"
 }
 
@@ -36,15 +36,17 @@ fun SecrmNavHost(app: SecureRemoteApp) {
         popExitTransition = { fadeOut(tween(Motion.SnapMs)) }
     ) {
         composable(Routes.Dashboard) {
-            DashboardScreen(app,
-                onOpenServer = { nav.navigate(Routes.Server) },
-                onOpenShell = { nav.navigate(Routes.Shell) })
+            DashboardScreen(
+                app = app,
+                onOpenSettings = { nav.navigate(Routes.Settings) },
+                onOpenShell = { nav.navigate(Routes.Shell) }
+            )
         }
-        composable(Routes.Server) {
+        composable(Routes.Settings) {
             ServerControlScreen(app, onBack = { nav.popBackStack() })
         }
         composable(Routes.Shell) {
-            QuickShellScreen(app, onBack = { nav.popBackStack() })
+            TerminalScreen(app, onBack = { nav.popBackStack() })
         }
     }
 }

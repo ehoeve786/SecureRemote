@@ -1,15 +1,30 @@
 package com.secrm.core.ssh.tools
 
+import kotlinx.serialization.Serializable
+
+@Serializable
+data class SavedConnection(
+    val name: String,
+    val host: String,
+    val port: Int = 22,
+    val user: String,
+    val authMethod: AuthMethod = AuthMethod.PASSWORD,
+    val password: String = "",
+    val keyId: String? = null,
+    val allowMcpExec: Boolean = true,
+    val allowMcpRead: Boolean = true
+)
+
 interface SavedConnections {
-    data class Connection(
-        val name: String,
-        val host: String,
-        val port: Int,
-        val user: String,
-        val password: String,
-        val allowMcpExec: Boolean = true,
-        val allowMcpRead: Boolean = true
-    )
-    fun list(): List<Connection>
-    fun find(name: String): Connection?
+    fun list(): List<SavedConnection>
+    fun find(name: String): SavedConnection?
+
+    /**
+     * Return the private key PEM for a saved key id, or null. Implemented by
+     * the app module's KeyRepository; ssh-tools only needs the string.
+     */
+    fun privateKeyFor(keyId: String): String?
+
+    /** Passphrase for a saved key id, or empty. */
+    fun keyPassphraseFor(keyId: String): String?
 }

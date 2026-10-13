@@ -22,8 +22,8 @@ android {
 dependencies {
     api(project(":core:server-mcp"))
     implementation(project(":core:domain"))
-    implementation("io.modelcontextprotocol:kotlin-sdk-server:0.15.0")
-    implementation("io.ktor:ktor-server-cio:3.5.1")
-    implementation("io.ktor:ktor-server-core:3.5.1")
-    implementation("io.ktor:ktor-server-status-pages:3.5.1")
+    implementation("io.ktor:ktor-server-cio:3.0.3")
+    implementation("io.ktor:ktor-server-core:3.0.3")
+    implementation("io.ktor:ktor-server-status-pages:3.0.3")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
 }

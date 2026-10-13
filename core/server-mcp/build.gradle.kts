@@ -12,15 +12,9 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
-    packaging {
-        resources.excludes += setOf(
-            "META-INF/DEPENDENCIES", "META-INF/INDEX.LIST",
-            "META-INF/io.netty.versions.properties"
-        )
-    }
 }
 dependencies {
     api(project(":core:domain"))
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
-    implementation("io.modelcontextprotocol:kotlin-sdk-server:0.15.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 }

@@ -3,7 +3,7 @@ package com.secrm.core.server.http
 import android.util.Log
 import com.secrm.core.domain.CallDispatcher
 import com.secrm.core.domain.Session
-import com.secrm.core.server.mcp.McpServerFactory
+import com.secrm.core.server.mcp.McpProtocol
 import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.cio.*
@@ -11,8 +11,15 @@ import io.ktor.server.engine.*
 import io.ktor.server.plugins.statuspages.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
-import io.modelcontextprotocol.kotlin.sdk.server.mcpStreamableHttp
+import io.ktor.server.routing.*
 
+/**
+ * Ktor CIO host bound to loopback. Two connectors:
+ *   - localPort  (7823): on-phone callers, accepts the local token
+ *   - remotePort (7824): forwarded by a tunnel, accepts the remote bearer
+ *
+ * Both bind to 127.0.0.1. External reachability is the tunnel's job.
+ */
 class McpHttpServer(
     private val dispatcher: CallDispatcher,
     private val auth: McpAuth,
@@ -31,38 +38,57 @@ class McpHttpServer(
         }) {
             install(StatusPages) {
                 exception<Throwable> { call, cause ->
-                    Log.e(TAG, "Unhandled", cause)
+                    Log.e(TAG, "Unhandled: ${cause.message}", cause)
                     call.respondText("internal error", status = HttpStatusCode.InternalServerError)
                 }
             }
-            intercept(ApplicationCallPipeline.Plugins) {
-                val path = call.request.path()
-                if (!path.startsWith(mcpPath)) return@intercept
-                val decision = auth.check(
-                    serverPort = call.request.local.port,
-                    hostHeader = call.request.headers[HttpHeaders.Host],
-                    originHeader = call.request.headers[HttpHeaders.Origin],
-                    authorization = call.request.headers[HttpHeaders.Authorization]
-                )
-                when (decision) {
-                    is McpAuth.Decision.Allow -> {}
-                    is McpAuth.Decision.Deny -> {
-                        if (decision.status == 401) {
-                            call.response.headers.append(
-                                HttpHeaders.WWWAuthenticate,
-                                "Bearer realm=\"secrm\""
+
+            routing {
+                post(mcpPath) {
+                    val decision = auth.check(
+                        serverPort = call.request.local.localPort,
+                        hostHeader = call.request.headers[HttpHeaders.Host],
+                        originHeader = call.request.headers[HttpHeaders.Origin],
+                        authorization = call.request.headers[HttpHeaders.Authorization]
+                    )
+                    when (decision) {
+                        is McpAuth.Decision.Deny -> {
+                            if (decision.status == 401) {
+                                call.response.headers.append(
+                                    HttpHeaders.WWWAuthenticate,
+                                    "Bearer realm=\"secrm\""
+                                )
+                            }
+                            call.respondText(
+                                decision.reason,
+                                status = HttpStatusCode.fromValue(decision.status)
                             )
+                            return@post
                         }
-                        call.respondText(decision.reason, status = HttpStatusCode.fromValue(decision.status))
-                        finish()
+                        is McpAuth.Decision.Allow -> Unit
+                    }
+
+                    val body = call.receiveText()
+                    val session = Session(id = "http", clientLabel = "mcp")
+                    val response = McpProtocol.handle(body, session, dispatcher)
+
+                    if (response == null) {
+                        call.respond(HttpStatusCode.Accepted)
+                    } else {
+                        call.respondText(
+                            text = response,
+                            contentType = ContentType.Application.Json,
+                            status = HttpStatusCode.OK
+                        )
                     }
                 }
-            }
-            mcpStreamableHttp(path = mcpPath, enableDnsRebindingProtection = false) {
-                McpServerFactory.build(dispatcher, Session(id = "http", clientLabel = "mcp"))
+
+                get(mcpPath) {
+                    call.respondText("secrm mcp server", status = HttpStatusCode.OK)
+                }
             }
         }.start(wait = false)
-        Log.i(TAG, "Listening on 127.0.0.1:$localPort and :$remotePort$mcpPath")
+        Log.i(TAG, "MCP listening on 127.0.0.1:$localPort and :$remotePort$mcpPath")
     }
 
     fun stop() { engine?.stop(500, 1500); engine = null }

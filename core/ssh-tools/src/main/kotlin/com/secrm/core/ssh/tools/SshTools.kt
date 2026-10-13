@@ -1,6 +1,7 @@
 package com.secrm.core.ssh.tools
 
 import com.secrm.core.domain.*
+import com.secrm.core.ssh.SshAuth
 import com.secrm.core.ssh.SshClientManager
 import com.secrm.core.ssh.SshConfig
 import kotlinx.coroutines.withTimeout
@@ -68,9 +69,29 @@ object SshTools {
                         "Enable MCP exec for this connection in the app.",
                         "Connection '$name' is not exposed for exec.")
 
+                    // Resolve auth from the connection.
+                    val auth: SshAuth = when (conn.authMethod) {
+                        AuthMethod.PASSWORD -> SshAuth.Password(conn.password)
+                        AuthMethod.SAVED_KEY -> {
+                            val keyId = conn.keyId
+                                ?: return ToolResult.error("no_key",
+                                    "Assign a key to this connection.",
+                                    "Connection '$name' has no key assigned.")
+                            val pem = saved.privateKeyFor(keyId)
+                                ?: return ToolResult.error("missing_key",
+                                    "Re-import the key in Settings → SSH Keys.",
+                                    "Private key for '$keyId' not found.")
+                            val pass = saved.keyPassphraseFor(keyId)?.takeIf { it.isNotBlank() }
+                            SshAuth.Key(pem = pem, passphrase = pass)
+                        }
+                        AuthMethod.AGENT -> return ToolResult.error("agent_unsupported",
+                            "Agent auth is disabled in this build. Use a saved key.",
+                            "Agent auth not yet enabled.")
+                    }
+
                     val ok = ssh.connect(SshConfig(
                         host = conn.host, port = conn.port,
-                        username = conn.user, password = conn.password
+                        username = conn.user, auth = auth
                     ))
                     if (!ok) return ToolResult.error("connect_failed",
                         "Check host reachability and credentials.",

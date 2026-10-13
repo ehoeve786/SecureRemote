@@ -1,15 +1,13 @@
 package com.secrm.core.ssh
 
 import android.util.Log
-import com.jcraft.jsch.ChannelShell
-import com.jcraft.jsch.JSch
-import com.jcraft.jsch.ProxySOCKS5
-import com.jcraft.jsch.Session
+import com.jcraft.jsch.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.io.OutputStream
+import java.nio.charset.StandardCharsets
 
 sealed interface SshState {
     data object Disconnected : SshState
@@ -22,7 +20,7 @@ data class SshConfig(
     val host: String,
     val port: Int = 22,
     val username: String,
-    val password: String,
+    val auth: SshAuth,
     val connectTimeoutMs: Int = 10_000,
     val socksPort: Int? = null
 )
@@ -42,14 +40,46 @@ class SshClientManager {
         try {
             _state.value = SshState.Connecting
             val jsch = JSch()
+
+            when (val a = cfg.auth) {
+                is SshAuth.Key -> {
+                    // Byte-array overload — the canonical Android path.
+                    // No temp file, no sandbox permission fights.
+                    // Pass null for the public key: JSch derives it from the
+                    // private key when only the private half is supplied.
+                    jsch.addIdentity(
+                        null,
+                        a.pem.toByteArray(StandardCharsets.US_ASCII),
+                        null,
+                        a.passphrase?.toByteArray(StandardCharsets.US_ASCII)
+                    )
+                }
+                is SshAuth.Agent -> {
+                    val connector = com.jcraft.jsch.TcpAgentConnector(a.host, a.port)
+                    val repo = com.jcraft.jsch.AgentIdentityRepository(connector)
+                    jsch.setIdentityRepository(repo)
+                }
+                is SshAuth.UnixAgent -> {
+                    throw UnsupportedOperationException(
+                        "Unix-socket agent not supported. Use Agent (TCP)."
+                    )
+                }
+                is SshAuth.Password -> { /* handled below */ }
+            }
+
             val s = jsch.getSession(cfg.username, cfg.host, cfg.port)
             session = s
-            cfg.socksPort?.let { s.setProxy(ProxySOCKS5("127.0.0.1", it, null)) }
+            cfg.socksPort?.let { s.setProxy(ProxySOCKS5("127.0.0.1", it)) }
             s.setConfig(java.util.Properties().apply {
                 put("StrictHostKeyChecking", "no")
-                put("PreferredAuthentications", "password,keyboard-interactive")
+                put("PreferredAuthentications",
+                    when (cfg.auth) {
+                        is SshAuth.Password -> "password,keyboard-interactive"
+                        else -> "publickey,password,keyboard-interactive"
+                    })
             })
-            s.setPassword(cfg.password)
+            if (cfg.auth is SshAuth.Password) s.setPassword((cfg.auth as SshAuth.Password).password)
+
             s.connect(cfg.connectTimeoutMs)
             _state.value = SshState.Connected(s.serverVersion ?: "unknown")
             true
@@ -61,9 +91,6 @@ class SshClientManager {
         }
     }
 
-    /**
-     * Open a shell channel if none is open. Used by the quick-shell UI.
-     */
     suspend fun ensureShell(): Boolean = withContext(Dispatchers.IO) {
         if (shell?.isConnected == true) return@withContext true
         val s = session ?: return@withContext false
@@ -73,16 +100,9 @@ class SshClientManager {
             ch.connect(10_000)
             shell = ch
             true
-        } catch (t: Throwable) {
-            Log.e("SSH", "shell open failed", t)
-            false
-        }
+        } catch (t: Throwable) { false }
     }
 
-    /**
-     * Run a single command in its own exec channel and return combined
-     * stdout+stderr. Used by the MCP server path (ssh.exec tool).
-     */
     suspend fun execOnce(command: String): String = withContext(Dispatchers.IO) {
         val s = session ?: error("No active SSH session")
         val ch = s.openChannel("exec") as com.jcraft.jsch.ChannelExec
@@ -99,20 +119,16 @@ class SshClientManager {
                 if (n <= 0 && ch.isClosed) break
                 if (n > 0) out.write(buf, 0, n)
             }
-        } finally {
-            ch.disconnect()
-        }
-        val stdout = out.toString(Charsets.UTF_8.name())
-        val stderr = err.toString(Charsets.UTF_8.name())
+        } finally { ch.disconnect() }
         buildString {
-            append(stdout)
-            if (stderr.isNotBlank()) { append("\n[stderr]\n"); append(stderr) }
+            append(out.toString(Charsets.UTF_8.name()))
+            val e = err.toString(Charsets.UTF_8.name())
+            if (e.isNotBlank()) { append("\n[stderr]\n"); append(e) }
         }
     }
 
     suspend fun disconnect() = withContext(Dispatchers.IO) {
-        cleanup()
-        _state.value = SshState.Disconnected
+        cleanup(); _state.value = SshState.Disconnected
     }
 
     private fun cleanup() {

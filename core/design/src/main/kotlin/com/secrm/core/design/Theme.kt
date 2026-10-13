@@ -16,6 +16,7 @@ import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.composed
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
@@ -64,12 +65,44 @@ object Motion {
 object SecrmType {
     val UiSans = FontFamily.Default
     val Mono = FontFamily.Monospace
-    val Display = TextStyle(UiSans, FontWeight.SemiBold, 28.sp, 34.sp, letterSpacing = (-0.6).sp)
-    val Title = TextStyle(UiSans, FontWeight.SemiBold, 20.sp, 26.sp, letterSpacing = (-0.3).sp)
-    val Body = TextStyle(UiSans, FontWeight.Normal, 14.sp, 20.sp)
-    val Label = TextStyle(UiSans, FontWeight.Medium, 12.sp, 16.sp)
-    val Caption = TextStyle(UiSans, FontWeight.Normal, 11.sp, 14.sp)
-    val MonoSmall = TextStyle(Mono, FontWeight.Normal, 11.sp, 14.sp)
+    val Display = TextStyle(
+        fontFamily = UiSans,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 28.sp,
+        lineHeight = 34.sp,
+        letterSpacing = (-0.6).sp
+    )
+    val Title = TextStyle(
+        fontFamily = UiSans,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 20.sp,
+        lineHeight = 26.sp,
+        letterSpacing = (-0.3).sp
+    )
+    val Body = TextStyle(
+        fontFamily = UiSans,
+        fontWeight = FontWeight.Normal,
+        fontSize = 14.sp,
+        lineHeight = 20.sp
+    )
+    val Label = TextStyle(
+        fontFamily = UiSans,
+        fontWeight = FontWeight.Medium,
+        fontSize = 12.sp,
+        lineHeight = 16.sp
+    )
+    val Caption = TextStyle(
+        fontFamily = UiSans,
+        fontWeight = FontWeight.Normal,
+        fontSize = 11.sp,
+        lineHeight = 14.sp
+    )
+    val MonoSmall = TextStyle(
+        fontFamily = Mono,
+        fontWeight = FontWeight.Normal,
+        fontSize = 11.sp,
+        lineHeight = 14.sp
+    )
 }
 
 private val Colors = darkColorScheme(
@@ -109,7 +142,7 @@ fun GlassCard(modifier: Modifier = Modifier, content: @Composable ColumnScope.()
     ) { content() }
 }
 
-enum class ConnectionVisual { Idle, Connecting, Up, Error }
+enum class ConnectionVisual { Idle, Connecting, Up, Warning, Error }
 
 @Composable
 fun StatusDot(state: ConnectionVisual, modifier: Modifier = Modifier) {
@@ -117,6 +150,7 @@ fun StatusDot(state: ConnectionVisual, modifier: Modifier = Modifier) {
         ConnectionVisual.Idle -> Palette.TextTertiary
         ConnectionVisual.Connecting -> Palette.Warning
         ConnectionVisual.Up -> Palette.Success
+        ConnectionVisual.Warning -> Palette.Warning
         ConnectionVisual.Error -> Palette.Danger
     }
     val pulse = state == ConnectionVisual.Connecting
@@ -139,17 +173,25 @@ fun Modifier.clickableNoRipple(onClick: () -> Unit): Modifier = composed {
 enum class PillStyle { Primary, Ghost, Danger }
 
 @Composable
-fun PillButton(text: String, style: PillStyle, modifier: Modifier = Modifier, onClick: () -> Unit) {
+fun PillButton(
+    text: String,
+    style: PillStyle,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    onClick: () -> Unit
+) {
     val (bg, fg) = when (style) {
         PillStyle.Primary -> Palette.Indigo to Color.White
         PillStyle.Ghost -> Palette.Surface3 to Palette.TextPrimary
         PillStyle.Danger -> Palette.Danger to Color.White
     }
+    val effectiveBg = if (enabled) bg else Palette.Surface3
+    val effectiveFg = if (enabled) fg else Palette.TextTertiary
     Box(
         modifier.height(48.dp)
             .clip(RoundedCornerShape(Space.pillRadius))
-            .background(bg)
-            .clickableNoRipple(onClick),
+            .background(effectiveBg)
+            .then(if (enabled) Modifier.clickableNoRipple(onClick) else Modifier),
         contentAlignment = Alignment.Center
-    ) { Text(text, style = SecrmType.Body, color = fg) }
+    ) { Text(text, style = SecrmType.Body, color = effectiveFg) }
 }
