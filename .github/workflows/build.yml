@@ -21,7 +21,7 @@ jobs:
         run: set -o pipefail; gradle :app:assembleDebug --no-daemon 2>&1 | tee build.log
       - if: failure()
         run: |
-          grep -E '^e: |What went wrong' -A2 build.log | head -40 | sed 's/^/::error::/'
+          grep -E '^e: |What went wrong|Could not (find|resolve|GET)' -A3 build.log | head -60 | sed 's/^/::error::/'
       - uses: actions/upload-artifact@v4
         with:
           name: app-debug
