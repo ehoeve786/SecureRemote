@@ -6,6 +6,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions: { contents: write }
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-java@v5
@@ -39,3 +40,12 @@ jobs:
         with:
           name: app-debug
           path: app/build/outputs/apk/debug/*.apk
+      # Fixed public link to the newest APK:
+      # https://github.com/ehoeve786/SecureRemote/releases/download/latest/SecureRemote.apk
+      - name: Publish APK
+        if: github.event_name == 'push'
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          cp app/build/outputs/apk/debug/*.apk SecureRemote.apk
+          gh release view latest >/dev/null 2>&1 || gh release create latest --prerelease --title "Latest build" --notes "Newest CI build."
+          gh release upload latest SecureRemote.apk --clobber

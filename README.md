@@ -20,7 +20,7 @@ Ktor CIO, AndroidX Security-Crypto.
 - core:server-http — Ktor host, loopback-only, bearer auth
 
 ## Build
-GitHub Actions builds every push; the debug APK is attached to each run as `app-debug`.
+GitHub Actions builds every push. Newest APK: https://github.com/ehoeve786/SecureRemote/releases/download/latest/SecureRemote.apk
 
 ## License
 Apache-2.0
