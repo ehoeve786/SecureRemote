@@ -22,6 +22,8 @@ data class SshConfig(
     val username: String,
     val auth: SshAuth,
     val connectTimeoutMs: Int = 10_000,
+    /** Private network to route through ("tailscale" or "wireguard"), or null for direct. */
+    val via: String? = null,
 )
 
 class SshClientManager {
@@ -29,8 +31,8 @@ class SshClientManager {
     private var session: Session? = null
     private var shell: ChannelShell? = null
 
-    /** Proxy for the next connection (a tunnel's SOCKS5), or null to connect directly. */
-    var proxy: () -> Proxy? = { null }
+    /** Resolves [SshConfig.via] to its tunnel's proxy; throws, in plain words, if it can't come up. */
+    var proxy: (String) -> Proxy = { error("No private network named $it") }
 
     private val _state = MutableStateFlow<SshState>(SshState.Disconnected)
     val state: StateFlow<SshState> = _state.asStateFlow()
@@ -63,7 +65,7 @@ class SshClientManager {
 
             val s = jsch.getSession(cfg.username, cfg.host, cfg.port)
             session = s
-            proxy()?.let(s::setProxy)
+            cfg.via?.let { s.setProxy(proxy(it)) }
             s.setConfig(java.util.Properties().apply {
                 put("StrictHostKeyChecking", "no")
                 put("PreferredAuthentications",
@@ -74,7 +76,7 @@ class SshClientManager {
             })
             if (cfg.auth is SshAuth.Password) s.setPassword((cfg.auth as SshAuth.Password).password)
 
-            s.connect(cfg.connectTimeoutMs)
+            s.connect(if (cfg.via != null) maxOf(cfg.connectTimeoutMs, 30_000) else cfg.connectTimeoutMs)
             _state.value = SshState.Connected(s.serverVersion ?: "unknown")
             true
         } catch (t: Throwable) {

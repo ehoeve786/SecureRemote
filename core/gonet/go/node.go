@@ -14,7 +14,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"net/netip"
 	"os"
 	"path/filepath"
 	"runtime/debug"
@@ -119,60 +118,16 @@ func (n *Node) setDirsLocked() {
 	}
 }
 
-// dial sends tailnet destinations (MagicDNS names, Tailscale IPs and subnet routes) through the
-// node, and everything else over the phone's own network.
+// dial sends every connection through the tailnet, MagicDNS names and subnet routes included. A
+// connection routed via Tailscale never falls back to the phone's own network (as in Tidegate).
 func (n *Node) dial(ctx context.Context, network, addr string) (net.Conn, error) {
 	n.mu.Lock()
 	srv := n.srv
 	n.mu.Unlock()
-	if srv != nil {
-		if target, ok := tailnetTarget(ctx, srv, addr); ok {
-			return srv.Dial(ctx, network, target)
-		}
+	if srv == nil {
+		return nil, errors.New("Tailscale is not running")
 	}
-	return direct.DialContext(ctx, network, addr)
-}
-
-func tailnetTarget(ctx context.Context, srv *tsnet.Server, addr string) (string, bool) {
-	host, port, err := net.SplitHostPort(addr)
-	if err != nil {
-		return "", false
-	}
-	lc, err := srv.LocalClient()
-	if err != nil {
-		return "", false
-	}
-	st, err := lc.Status(ctx)
-	if err != nil {
-		return "", false
-	}
-	ip, err := netip.ParseAddr(host)
-	if err != nil {
-		name := strings.ToLower(strings.TrimSuffix(host, "."))
-		for _, p := range st.Peer {
-			dns := strings.ToLower(strings.TrimSuffix(p.DNSName, "."))
-			if dns != "" && len(p.TailscaleIPs) > 0 && (name == dns || name == strings.SplitN(dns, ".", 2)[0]) {
-				return net.JoinHostPort(p.TailscaleIPs[0].String(), port), true
-			}
-		}
-		ips, err := net.DefaultResolver.LookupNetIP(ctx, "ip", host)
-		if err != nil || len(ips) == 0 {
-			return "", false
-		}
-		ip = ips[0].Unmap()
-	}
-	for _, p := range st.Peer {
-		if p.AllowedIPs == nil {
-			continue
-		}
-		for _, r := range p.AllowedIPs.All() {
-			// Skip exit-node default routes: only the phone's own network reaches the internet.
-			if r.Bits() > 0 && r.Contains(ip) {
-				return net.JoinHostPort(ip.String(), port), true
-			}
-		}
-	}
-	return "", false
+	return srv.Dial(ctx, network, addr)
 }
 
 // serveWhenRunning waits until the node is logged in, then opens the HTTPS listener.

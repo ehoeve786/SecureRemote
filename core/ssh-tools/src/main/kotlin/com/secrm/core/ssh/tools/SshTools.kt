@@ -94,7 +94,7 @@ object SshTools {
 
                     val ok = ssh.connect(SshConfig(
                         host = conn.host, port = conn.port,
-                        username = conn.user, auth = auth
+                        username = conn.user, auth = auth, via = conn.via
                     ))
                     if (!ok) return ToolResult.error("connect_failed",
                         "Check host reachability and credentials.",

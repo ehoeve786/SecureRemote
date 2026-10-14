@@ -206,7 +206,8 @@ fun DashboardScreen(
                                         host = conn.host,
                                         port = conn.port,
                                         username = conn.user,
-                                        auth = auth
+                                        auth = auth,
+                                        via = conn.via
                                     ))
                                     connecting = null
                                     if (ok) {
@@ -378,6 +379,7 @@ private fun ConnectionFormSheet(
     var authMethod by remember { mutableStateOf(initial?.authMethod ?: AuthMethod.PASSWORD) }
     var password by remember { mutableStateOf(initial?.password ?: "") }
     var keyId by remember { mutableStateOf(initial?.keyId) }
+    var via by remember { mutableStateOf(initial?.via) }
     var canExec by remember { mutableStateOf(initial?.allowMcpExec ?: true) }
     var canRead by remember { mutableStateOf(initial?.allowMcpRead ?: true) }
 
@@ -498,6 +500,20 @@ private fun ConnectionFormSheet(
                 }
             }
 
+            // ── Route through (as in Tidegate) ──────────────
+            Text("Route through", style = SecrmType.Caption, color = Palette.TextSecondary)
+            Row(
+                Modifier.fillMaxWidth()
+                    .clip(RoundedCornerShape(Space.pillRadius))
+                    .background(Palette.Surface2)
+                    .padding(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                listOf(null to "Direct", "tailscale" to "Tailscale", "wireguard" to "WireGuard").forEach { (v, label) ->
+                    AuthTab(label, via == v, Modifier.weight(1f)) { via = v }
+                }
+            }
+
             Text("MCP exposure", style = SecrmType.Caption, color = Palette.TextSecondary)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Checkbox(canExec, { canExec = it })
@@ -522,6 +538,7 @@ private fun ConnectionFormSheet(
                         authMethod = authMethod,
                         password = if (authMethod == AuthMethod.PASSWORD) password else "",
                         keyId = if (authMethod != AuthMethod.PASSWORD) keyId else null,
+                        via = via,
                         allowMcpExec = canExec,
                         allowMcpRead = canRead
                     ))

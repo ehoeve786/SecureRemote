@@ -28,7 +28,6 @@ type Tunnel struct {
 	mu        sync.Mutex
 	dev       *device.Device
 	tnet      *wgnetstack.Net
-	routes    []netip.Prefix
 	addresses []netip.Prefix
 	socks     *socksProxy
 	lastError string
@@ -84,37 +83,19 @@ func (t *Tunnel) Start(config string) error {
 		return err
 	}
 	t.dev, t.tnet, t.socks, t.addresses = dev, tnet, socks, cfg.Addresses
-	for _, p := range cfg.Peers {
-		t.routes = append(t.routes, p.AllowedIPs...)
-	}
 	t.logs.logf("srnet: WireGuard up as %s", addrs[0])
 	return nil
 }
 
-// dial sends destinations inside a peer's AllowedIPs through the tunnel, and everything else over
-// the phone's own network. Names the phone cannot resolve are tried with the tunnel's DNS servers.
+// dial sends every connection through the tunnel; names resolve with the config's DNS servers.
 func (t *Tunnel) dial(ctx context.Context, network, addr string) (net.Conn, error) {
 	t.mu.Lock()
-	tn, routes := t.tnet, t.routes
+	tn := t.tnet
 	t.mu.Unlock()
-	host, port, err := net.SplitHostPort(addr)
-	if tn == nil || err != nil {
-		return direct.DialContext(ctx, network, addr)
+	if tn == nil {
+		return nil, errors.New("WireGuard is not running")
 	}
-	ip, err := netip.ParseAddr(host)
-	if err != nil {
-		if ips, lerr := net.DefaultResolver.LookupNetIP(ctx, "ip", host); lerr == nil && len(ips) > 0 {
-			ip = ips[0].Unmap()
-		} else if names, lerr := tn.LookupContextHost(ctx, host); lerr == nil && len(names) > 0 {
-			ip, _ = netip.ParseAddr(names[0])
-		}
-	}
-	for _, r := range routes {
-		if ip.IsValid() && r.Contains(ip) {
-			return tn.DialContext(ctx, network, net.JoinHostPort(ip.String(), port))
-		}
-	}
-	return direct.DialContext(ctx, network, addr)
+	return tn.DialContext(ctx, network, addr)
 }
 
 // Stop takes the tunnel down.
@@ -125,7 +106,7 @@ func (t *Tunnel) Stop() {
 	if t.dev != nil {
 		t.dev.Close()
 	}
-	t.dev, t.tnet, t.socks, t.routes, t.addresses = nil, nil, nil, nil, nil
+	t.dev, t.tnet, t.socks, t.addresses = nil, nil, nil, nil
 }
 
 type wgStatus struct {

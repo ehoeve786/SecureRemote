@@ -9,11 +9,8 @@ import (
 	"tailscale.com/net/socks5"
 )
 
-// dialFunc dials addr, choosing between a tunnel and the phone's own network.
+// dialFunc dials addr through a tunnel.
 type dialFunc func(ctx context.Context, network, addr string) (net.Conn, error)
-
-// direct dials over the phone's own network.
-var direct net.Dialer
 
 // socksProxy is a loopback SOCKS5 server the app's SSH client connects through. It needs a password
 // so other apps on the phone cannot use it to reach the private network.

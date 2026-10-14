@@ -11,7 +11,11 @@ import com.secrm.core.ssh.SshClientManager
 import com.secrm.core.ssh.tools.SshTools
 import com.secrm.core.tunnel.TailscaleTunnel
 import com.secrm.core.tunnel.WireGuardTunnel
+import com.secrm.core.tunnel.Tunnel
 import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 import com.secrm.data.BitwardenVault
 import com.secrm.data.ConnectionRepository
 import com.secrm.data.KeyRepository
@@ -36,11 +40,13 @@ class SecureRemoteApp : Application() {
         wireguard = WireGuardTunnel(this, scope, { config.get("wg.config") },
             { it?.let { c -> config.put("wg.config", c) } ?: config.remove("wg.config") }).apply { resume() }
         ssh = SshClientManager()
-        // SSH goes through whichever tunnel is up; each sends only its own network's hosts through it.
-        ssh.proxy = {
-            (tailscale.socks ?: wireguard.socks)?.let {
-                com.jcraft.jsch.ProxySOCKS5("127.0.0.1", it.port).apply { setUserPasswd(it.user, it.pass) }
-            }
+        // A connection routed through a private network starts it if needed and waits (up to 30 s) for it.
+        ssh.proxy = { via ->
+            val (t, name) = if (via == "wireguard") wireguard to "WireGuard" else tailscale to "Tailscale"
+            t.start() // no-op if already running
+            val s = runBlocking { withTimeoutOrNull(30_000) { t.state.first { it is Tunnel.State.Up }; t.socks } }
+                ?: error("$name isn't connected. Check Settings → Private network.")
+            com.jcraft.jsch.ProxySOCKS5("127.0.0.1", s.port).apply { setUserPasswd(s.user, s.pass) }
         }
         audit = McpAuditLog(this)
         keys = KeyRepository(config)

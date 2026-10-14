@@ -11,6 +11,8 @@ data class SavedConnection(
     val authMethod: AuthMethod = AuthMethod.PASSWORD,
     val password: String = "",
     val keyId: String? = null,
+    /** Private network to route through ("tailscale" or "wireguard"), or null for direct. */
+    val via: String? = null,
     val allowMcpExec: Boolean = true,
     val allowMcpRead: Boolean = true
 )
