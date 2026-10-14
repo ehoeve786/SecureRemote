@@ -173,16 +173,10 @@ class SshClientManager {
         val out = ByteArrayOutputStream()
         val err = ByteArrayOutputStream()
         ch.setErrStream(err)
+        // Take the stream before connecting, or JSch drops the command's first output.
+        val input = ch.inputStream
         ch.connect(10_000)
-        try {
-            val input = ch.inputStream
-            val buf = ByteArray(4096)
-            while (true) {
-                val n = input.read(buf)
-                if (n <= 0 && ch.isClosed) break
-                if (n > 0) out.write(buf, 0, n)
-            }
-        } finally { ch.disconnect() }
+        try { input.copyTo(out) } finally { ch.disconnect() }
         buildString {
             append(out.toString(Charsets.UTF_8.name()))
             val e = err.toString(Charsets.UTF_8.name())
