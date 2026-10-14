@@ -5,7 +5,7 @@ plugins {
 }
 android {
     namespace = "com.secrm.core.terminal"
-    compileSdk = 36
+    compileSdk = 37
     defaultConfig { minSdk = 26 }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -14,13 +14,13 @@ android {
     buildFeatures { compose = true }
 }
 dependencies {
-    val bom = platform("androidx.compose:compose-bom:2026.06.01")
+    val bom = platform("androidx.compose:compose-bom:2026.09.00")
     implementation(bom)
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.foundation:foundation")
     implementation(project(":core:ssh"))
     // ConnectBot termlib — pure-Java VT100/xterm emulator.
-    api("org.connectbot:termlib:0.2.0")
+    api("org.connectbot:termlib:0.3.13")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 }
 kotlin { compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) } }

@@ -4,7 +4,7 @@ plugins {
 }
 android {
     namespace = "com.secrm.core.tunnel"
-    compileSdk = 36
+    compileSdk = 37
     defaultConfig { minSdk = 30 }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

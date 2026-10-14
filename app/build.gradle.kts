@@ -6,7 +6,7 @@ plugins {
 }
 android {
     namespace = "com.secrm"
-    compileSdk = 36
+    compileSdk = 37
     defaultConfig {
         applicationId = "com.secrm"
         minSdk = 30 // auth-bound Keystore key (setUserAuthenticationParameters)
@@ -45,7 +45,7 @@ android {
     }
 }
 dependencies {
-    val bom = platform("androidx.compose:compose-bom:2026.06.01")
+    val bom = platform("androidx.compose:compose-bom:2026.09.00")
     implementation(bom)
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
