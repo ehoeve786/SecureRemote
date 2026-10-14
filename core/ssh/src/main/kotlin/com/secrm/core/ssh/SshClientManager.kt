@@ -22,13 +22,15 @@ data class SshConfig(
     val username: String,
     val auth: SshAuth,
     val connectTimeoutMs: Int = 10_000,
-    val socksPort: Int? = null
 )
 
 class SshClientManager {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var session: Session? = null
     private var shell: ChannelShell? = null
+
+    /** Proxy for the next connection (a tunnel's SOCKS5), or null to connect directly. */
+    var proxy: () -> Proxy? = { null }
 
     private val _state = MutableStateFlow<SshState>(SshState.Disconnected)
     val state: StateFlow<SshState> = _state.asStateFlow()
@@ -59,7 +61,7 @@ class SshClientManager {
 
             val s = jsch.getSession(cfg.username, cfg.host, cfg.port)
             session = s
-            cfg.socksPort?.let { s.setProxy(ProxySOCKS5("127.0.0.1", it)) }
+            proxy()?.let(s::setProxy)
             s.setConfig(java.util.Properties().apply {
                 put("StrictHostKeyChecking", "no")
                 put("PreferredAuthentications",

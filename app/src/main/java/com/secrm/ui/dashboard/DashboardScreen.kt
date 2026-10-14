@@ -206,8 +206,7 @@ fun DashboardScreen(
                                         host = conn.host,
                                         port = conn.port,
                                         username = conn.user,
-                                        auth = auth,
-                                        socksPort = app.tunnel.socksPortOrNull()
+                                        auth = auth
                                     ))
                                     connecting = null
                                     if (ok) {

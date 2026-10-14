@@ -9,8 +9,9 @@ import com.secrm.core.mcp.McpAuditLog
 import com.secrm.core.security.EncryptedConfigStore
 import com.secrm.core.ssh.SshClientManager
 import com.secrm.core.ssh.tools.SshTools
-import com.secrm.core.tunnel.MockTunnel
-import com.secrm.core.tunnel.Tunnel
+import com.secrm.core.tunnel.TailscaleTunnel
+import com.secrm.core.tunnel.WireGuardTunnel
+import kotlinx.coroutines.MainScope
 import com.secrm.data.BitwardenVault
 import com.secrm.data.ConnectionRepository
 import com.secrm.data.KeyRepository
@@ -18,7 +19,8 @@ import kotlinx.serialization.json.JsonObject
 
 class SecureRemoteApp : Application() {
     lateinit var config: EncryptedConfigStore; private set
-    lateinit var tunnel: Tunnel; private set
+    lateinit var tailscale: TailscaleTunnel; private set
+    lateinit var wireguard: WireGuardTunnel; private set
     lateinit var ssh: SshClientManager; private set
     lateinit var audit: McpAuditLog; private set
     lateinit var dispatcher: CallDispatcher; private set
@@ -29,8 +31,17 @@ class SecureRemoteApp : Application() {
     override fun onCreate() {
         super.onCreate()
         config = EncryptedConfigStore(this)
-        tunnel = MockTunnel()
+        val scope = MainScope()
+        tailscale = TailscaleTunnel(this, scope, targetPort = 7824).apply { resume() }
+        wireguard = WireGuardTunnel(this, scope, { config.get("wg.config") },
+            { it?.let { c -> config.put("wg.config", c) } ?: config.remove("wg.config") }).apply { resume() }
         ssh = SshClientManager()
+        // SSH goes through whichever tunnel is up; each sends only its own network's hosts through it.
+        ssh.proxy = {
+            (tailscale.socks ?: wireguard.socks)?.let {
+                com.jcraft.jsch.ProxySOCKS5("127.0.0.1", it.port).apply { setUserPasswd(it.user, it.pass) }
+            }
+        }
         audit = McpAuditLog(this)
         keys = KeyRepository(config)
         vault = BitwardenVault(config)

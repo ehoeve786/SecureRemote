@@ -16,11 +16,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import com.secrm.SecureRemoteApp
 import com.secrm.core.tunnel.Tunnel
-import com.secrm.core.tunnel.TunnelConfig
 import com.secrm.design.*
 import com.secrm.service.McpServerService
 import com.secrm.ui.agent.BitwardenScreen
@@ -30,7 +30,6 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ServerControlScreen(app: SecureRemoteApp, onBack: () -> Unit) {
-    val ts by app.tunnel.state.collectAsState()
     var showAgent by remember { mutableStateOf(false) }
     var showKeys by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -62,8 +61,9 @@ fun ServerControlScreen(app: SecureRemoteApp, onBack: () -> Unit) {
             ),
             verticalArrangement = Arrangement.spacedBy(Space.lg)
         ) {
-            item { SectionLabel("TAILSCALE TUNNEL") }
-            item { TailscaleSection(app, ts) }
+            item { SectionLabel("PRIVATE NETWORK") }
+            item { TailscaleSection(app) }
+            item { WireGuardSection(app) }
 
             item { SectionLabel("SSH KEYS") }
             item { KeyEntryCard(onOpen = { showKeys = true }) }
@@ -90,121 +90,105 @@ private fun SectionLabel(text: String) {
     )
 }
 
-// ── Tailscale ─────────────────────────────────────────────
+// ── Private network ───────────────────────────────────
 
 @Composable
-private fun TailscaleSection(app: SecureRemoteApp, ts: Tunnel.State) {
-    val scope = rememberCoroutineScope()
-    var authKey by remember { mutableStateOf("") }
-    var expanded by remember { mutableStateOf(ts !is Tunnel.State.Up) }
-
-    GlassCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(Space.lg)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Tailscale", style = SecrmType.Body.copy(fontWeight = FontWeight.Medium),
-                    color = Palette.TextPrimary)
-                Spacer(Modifier.weight(1f))
-                StatusDot(when (ts) {
-                    is Tunnel.State.Up -> ConnectionVisual.Up
-                    is Tunnel.State.Starting -> ConnectionVisual.Connecting
-                    is Tunnel.State.Failed -> ConnectionVisual.Error
-                    else -> ConnectionVisual.Idle
-                })
-                Spacer(Modifier.width(Space.sm))
-                Text(
-                    when (val s = ts) {
-                        is Tunnel.State.Up -> "Connected"
-                        is Tunnel.State.Starting -> "Connecting…"
-                        is Tunnel.State.Failed -> "Error"
-                        else -> "Not connected"
-                    },
-                    style = SecrmType.Label, color = Palette.TextSecondary
-                )
+private fun TailscaleSection(app: SecureRemoteApp) {
+    val ts = app.tailscale
+    val st by ts.state.collectAsState()
+    val uri = LocalUriHandler.current
+    var public by remember { mutableStateOf(ts.public) }
+    NetworkCard("Tailscale", st,
+        "Joins your tailnet in-app (no VPN). SSH reaches tailnet hosts and subnet routes; " +
+        "the MCP server is served at https://<this phone>/mcp."
+    ) {
+        if (st is Tunnel.State.NeedsAuth)
+            PillButton("Sign in to Tailscale", PillStyle.Primary, Modifier.fillMaxWidth()) {
+                uri.openUri((st as Tunnel.State.NeedsAuth).url)
             }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Public (Funnel) for claude.ai", style = SecrmType.Body,
+                color = Palette.TextPrimary, modifier = Modifier.weight(1f))
+            Switch(public, { public = it; ts.public = it })
+        }
+        if (public) ts.funnelProblem?.let { Text(it, style = SecrmType.Caption, color = Palette.Warning) }
+        OnOff(st, ts::start, ts::stop)
+        if (st !is Tunnel.State.Idle) PillButton("Sign out", PillStyle.Ghost, Modifier.fillMaxWidth()) { ts.logout() }
+    }
+}
 
-            if (ts is Tunnel.State.Up) {
-                Spacer(Modifier.height(Space.sm))
-                Text("${ts.selfIp} · SOCKS5 :${ts.socksPort}",
-                    style = SecrmType.MonoSmall, color = Palette.TextSecondary)
-            }
-            if (ts is Tunnel.State.Failed) {
-                Spacer(Modifier.height(Space.sm))
-                Text(ts.reason, style = SecrmType.MonoSmall, color = Palette.Danger)
-            }
-
-            Spacer(Modifier.height(Space.md))
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("Configuration", style = SecrmType.Caption, color = Palette.TextSecondary)
-                TextButton(onClick = { expanded = !expanded }) {
-                    Text(if (expanded) "Hide" else "Show", color = Palette.Indigo)
+@Composable
+private fun WireGuardSection(app: SecureRemoteApp) {
+    val wg = app.wireguard
+    val st by wg.state.collectAsState()
+    val ctx = LocalContext.current
+    var configured by remember { mutableStateOf(wg.configured) }
+    var config by remember { mutableStateOf("") }
+    var problem by remember { mutableStateOf<String?>(null) }
+    NetworkCard("WireGuard", st,
+        "Userspace tunnel from a wg-quick config (e.g. exported by your router). " +
+        "SSH reaches the peer's AllowedIPs through it; other apps are unaffected."
+    ) {
+        if (configured) {
+            wg.publicKey?.let { key ->
+                Text("Phone public key", style = SecrmType.Caption, color = Palette.TextSecondary)
+                Text(key, style = SecrmType.MonoSmall, color = Palette.TextPrimary)
+                PillButton("Copy public key", PillStyle.Ghost, Modifier.fillMaxWidth()) {
+                    (ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
+                        .setPrimaryClip(ClipData.newPlainText("wg public key", key))
                 }
             }
-
-            if (expanded) {
-                Spacer(Modifier.height(Space.sm))
-
-                // Instructions
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = Palette.Surface2),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(Modifier.padding(Space.md), verticalArrangement = Arrangement.spacedBy(Space.xs)) {
-                        Text("How to get an auth key", style = SecrmType.Label,
-                            color = Palette.TextPrimary, fontWeight = FontWeight.Medium)
-                        Text(
-                            "1. Sign in at login.tailscale.com/admin/settings/keys\n" +
-                            "2. Click “Generate auth key…”\n" +
-                            "3. Set Reusable → Yes, Ephemeral → No\n" +
-                            "4. Copy the tskey-auth-… value and paste it below",
-                            style = SecrmType.Body, color = Palette.TextSecondary
-                        )
-                    }
-                }
-
-                Spacer(Modifier.height(Space.md))
-                OutlinedTextField(
-                    value = authKey,
-                    onValueChange = { authKey = it },
-                    label = { Text("Auth Key (tskey-auth-…)") },
-                    placeholder = { Text("tskey-auth-xxxxxxxxxxxx") },
-                    singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(),
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Spacer(Modifier.height(Space.md))
-                if (ts is Tunnel.State.Up) {
-                    PillButton("Disconnect", PillStyle.Danger, Modifier.fillMaxWidth()) {
-                        scope.launch { app.tunnel.stop() }
-                    }
-                } else {
-                    PillButton(
-                        "Connect",
-                        PillStyle.Primary,
-                        Modifier.fillMaxWidth(),
-                        enabled = authKey.isNotBlank() || app.config.mcpBearerToken != null
-                    ) {
-                        app.config.sshConnectionsJson // touch
-                        scope.launch {
-                            app.tunnel.start(TunnelConfig(authKey = authKey))
-                        }
-                    }
-                }
-
-                Spacer(Modifier.height(Space.sm))
-                Text(
-                    "Note: the current build uses a mock tunnel — the connection will report success without actually joining a tailnet. " +
-                    "Real Tailscale wiring ships once the userspace AAR is added.",
-                    style = SecrmType.Caption, color = Palette.TextTertiary
-                )
+            OnOff(st, wg::start, wg::stop)
+            PillButton("Remove config", PillStyle.Ghost, Modifier.fillMaxWidth()) { wg.forget(); configured = false }
+        } else {
+            OutlinedTextField(config, { config = it }, label = { Text("Paste wg-quick config") },
+                minLines = 4, visualTransformation = PasswordVisualTransformation(),
+                modifier = Modifier.fillMaxWidth())
+            PillButton("Save", PillStyle.Primary, Modifier.fillMaxWidth(), config.isNotBlank()) {
+                problem = wg.configure(config)
+                if (problem == null) { configured = true; config = "" }
             }
+            problem?.let { Text(it, style = SecrmType.Caption, color = Palette.Danger) }
         }
     }
 }
+
+@Composable
+private fun NetworkCard(title: String, st: Tunnel.State, blurb: String, content: @Composable ColumnScope.() -> Unit) {
+    GlassCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(Space.lg), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(title, style = SecrmType.Body.copy(fontWeight = FontWeight.Medium),
+                    color = Palette.TextPrimary, modifier = Modifier.weight(1f))
+                StatusDot(when (st) {
+                    is Tunnel.State.Up -> ConnectionVisual.Up
+                    is Tunnel.State.Starting -> ConnectionVisual.Connecting
+                    is Tunnel.State.NeedsAuth -> ConnectionVisual.Warning
+                    is Tunnel.State.Failed -> ConnectionVisual.Error
+                    Tunnel.State.Idle -> ConnectionVisual.Idle
+                })
+                Spacer(Modifier.width(Space.sm))
+                Text(when (st) {
+                    is Tunnel.State.Up -> "Connected"
+                    is Tunnel.State.Starting -> "Connecting…"
+                    is Tunnel.State.NeedsAuth -> "Sign-in needed"
+                    is Tunnel.State.Failed -> "Error"
+                    Tunnel.State.Idle -> "Off"
+                }, style = SecrmType.Label, color = Palette.TextSecondary)
+            }
+            Text(blurb, style = SecrmType.Caption, color = Palette.TextSecondary)
+            if (st is Tunnel.State.Up) Text("${st.name} · ${st.address}", style = SecrmType.MonoSmall, color = Palette.TextSecondary)
+            if (st is Tunnel.State.Failed) Text(st.reason, style = SecrmType.MonoSmall, color = Palette.Danger)
+            content()
+        }
+    }
+}
+
+@Composable
+private fun OnOff(st: Tunnel.State, on: () -> Unit, off: () -> Unit) =
+    if (st is Tunnel.State.Idle || st is Tunnel.State.Failed)
+        PillButton("Connect", PillStyle.Primary, Modifier.fillMaxWidth()) { on() }
+    else PillButton("Disconnect", PillStyle.Danger, Modifier.fillMaxWidth()) { off() }
 
 // ── MCP Server ────────────────────────────────────────────
 
@@ -288,13 +272,10 @@ private fun McpSection(app: SecureRemoteApp) {
                             style = SecrmType.Label, color = Palette.TextPrimary,
                             fontWeight = FontWeight.Medium)
                         Text(
-                            "1.  Expose port 7824 to the public internet.\n" +
-                            "    Easiest: install Tailscale on this phone and run\n" +
-                            "        tailscale funnel 7824\n" +
-                            "    Alternatives: ngrok http 7824, Cloudflare Tunnel,\n" +
-                            "    or a small VPS that dials back over SSH.\n\n" +
-                            "2.  Note the public URL, e.g.\n" +
-                            "        https://your-phone.ts.net\n\n" +
+                            "1.  Under Private network, connect Tailscale and turn on\n" +
+                            "    Public (Funnel).\n\n" +
+                            "2.  The URL is the phone's Tailscale name, e.g.\n" +
+                            "        https://secureremote-phone.tail1234.ts.net\n\n" +
                             "3.  On claude.ai → Settings → Connectors → Add custom connector.\n" +
                             "        URL:  https://your-phone.ts.net/mcp\n" +
                             "        Auth: Bearer <token above>\n\n" +
