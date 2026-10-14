@@ -5,7 +5,8 @@ class McpAuth(
     private val remotePort: Int,
     private val localToken: String,
     private val remoteAllowedHosts: Set<String>,
-    private val remoteBearer: String?
+    /** Accepts a remote bearer: the app's static token or an OAuth access token. */
+    private val remoteToken: (String) -> Boolean
 ) {
     sealed interface Decision {
         data object Allow : Decision
@@ -45,7 +46,7 @@ class McpAuth(
         val token = authorization?.removePrefix("Bearer ")?.trim()
         return when {
             isLocal && token == localToken -> Decision.Allow
-            isRemote && remoteBearer != null && token == remoteBearer -> Decision.Allow
+            isRemote && token != null && remoteToken(token) -> Decision.Allow
             else -> Decision.Deny(401, "Unauthorized")
         }
     }

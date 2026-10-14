@@ -31,6 +31,7 @@ class SecureRemoteApp : Application() {
     lateinit var connections: ConnectionRepository; private set
     lateinit var keys: KeyRepository; private set
     lateinit var vault: BitwardenVault; private set
+    lateinit var oauth: com.secrm.core.server.http.McpOAuth; private set
 
     override fun onCreate() {
         super.onCreate()
@@ -51,6 +52,7 @@ class SecureRemoteApp : Application() {
         audit = McpAuditLog(this)
         keys = KeyRepository(config)
         vault = BitwardenVault(config)
+        oauth = com.secrm.core.server.http.McpOAuth({ config.get("mcp.oauth") }, { config.put("mcp.oauth", it) })
         connections = ConnectionRepository(config, keys, vault)
         dispatcher = CallDispatcher(object : CallDispatcher.AuditSink {
             override suspend fun record(

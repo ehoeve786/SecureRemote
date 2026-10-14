@@ -1,0 +1,99 @@
+package com.secrm.core.server.http
+
+import java.net.URI
+import java.security.MessageDigest
+import java.security.SecureRandom
+import java.util.Base64
+
+/**
+ * Minimal OAuth 2.1 server so claude.ai can add the MCP endpoint as a custom connector (it cannot
+ * send a static bearer token). Dynamic client registration, authorization code with PKCE (S256
+ * only) and rotating refresh tokens, after PocketPilot's AuthorizationServer. Approval is the
+ * pairing code the app shows: only someone holding the phone can connect. Only Claude's redirect
+ * URIs are accepted. Tokens are kept as SHA-256 hashes through [load]/[save].
+ */
+class McpOAuth(load: () -> String?, private val save: (String) -> Unit) {
+    private val random = SecureRandom()
+
+    /** Token hash → (kind "a"ccess / "r"efresh, expiry millis). */
+    private val tokens = HashMap<String, Pair<String, Long>>().apply {
+        load().orEmpty().lines().forEach { l -> l.split(' ').takeIf { it.size == 3 }?.let { put(it[0], it[1] to it[2].toLong()) } }
+    }
+
+    private class Code(val challenge: String, val redirect: String, val expires: Long)
+    private val codes = HashMap<String, Code>()
+
+    private var pairing: String? = null
+    private var pairingExpires = 0L
+    private var failures = 0
+
+    /** A new single-use pairing code, valid for 10 minutes or 5 wrong tries. */
+    @Synchronized
+    fun newPairingCode(): String =
+        (1..8).map { ALPHABET[random.nextInt(ALPHABET.length)] }.joinToString("")
+            .also { pairing = it; pairingExpires = now() + 10 * MINUTE; failures = 0 }
+
+    @Synchronized
+    fun isValid(token: String) = tokens[sha(token)]?.let { it.first == "a" && it.second > now() } == true
+
+    /** Disconnects every client. */
+    @Synchronized
+    fun revokeAll() { tokens.clear(); codes.clear(); persist() }
+
+    /** Exchanges a correct pairing code for an authorization code, or returns null. */
+    @Synchronized
+    fun authorize(code: String, challenge: String, redirect: String): String? {
+        val p = pairing
+        if (p == null || now() > pairingExpires || !MessageDigest.isEqual(code.trim().uppercase().toByteArray(), p.toByteArray())) {
+            if (++failures >= 5) pairing = null
+            return null
+        }
+        pairing = null
+        return token().also { codes[it] = Code(challenge, redirect, now() + MINUTE) }
+    }
+
+    /** The token endpoint. Returns (access, refresh), or null for invalid_grant. */
+    @Synchronized
+    fun token(params: Map<String, String?>): Pair<String, String>? {
+        when (params["grant_type"]) {
+            "authorization_code" -> {
+                val c = params["code"]?.let(codes::remove) ?: return null
+                val verifier = params["code_verifier"] ?: return null
+                if (c.expires < now() || (params["redirect_uri"] ?: c.redirect) != c.redirect) return null
+                if (!MessageDigest.isEqual(b64(sha256(verifier.toByteArray())).toByteArray(), c.challenge.toByteArray())) return null
+            }
+            "refresh_token" -> {
+                // Rotating: each refresh token works once.
+                val r = tokens.remove(sha(params["refresh_token"] ?: return null)) ?: return null
+                if (r.first != "r" || r.second < now()) return null
+            }
+            else -> return null
+        }
+        val access = token()
+        val refresh = token()
+        tokens.values.removeAll { it.second < now() }
+        tokens[sha(access)] = "a" to now() + HOUR
+        tokens[sha(refresh)] = "r" to now() + 30 * DAY
+        persist()
+        return access to refresh
+    }
+
+    private fun persist() = save(tokens.entries.joinToString("\n") { "${it.key} ${it.value.first} ${it.value.second}" })
+    private fun token() = b64(ByteArray(32).also(random::nextBytes))
+    private fun sha(s: String) = sha256(s.toByteArray()).joinToString("") { "%02x".format(it) }
+
+    companion object {
+        const val ACCESS_SECONDS = 3600
+        private const val MINUTE = 60_000L
+        private const val HOUR = 60 * MINUTE
+        private const val DAY = 24 * HOUR
+        private const val ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
+        private fun now() = System.currentTimeMillis()
+        private fun sha256(b: ByteArray) = MessageDigest.getInstance("SHA-256").digest(b)
+        private fun b64(b: ByteArray) = Base64.getUrlEncoder().withoutPadding().encodeToString(b)
+
+        /** Claude's OAuth callbacks only. */
+        fun allowedRedirect(uri: String?) = runCatching { URI(uri) }.getOrNull()
+            ?.let { it.scheme == "https" && it.host in setOf("claude.ai", "claude.com") } == true
+    }
+}

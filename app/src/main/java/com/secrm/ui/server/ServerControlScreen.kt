@@ -227,6 +227,24 @@ private fun McpSection(app: SecureRemoteApp) {
                 }
             }
 
+            // claude.ai connector (OAuth via pairing code)
+            val ts by app.tailscale.state.collectAsState()
+            (ts as? com.secrm.core.tunnel.Tunnel.State.Up)?.takeIf { app.tailscale.public }?.let {
+                Spacer(Modifier.height(Space.md))
+                Text("Claude connector URL", style = SecrmType.Caption, color = Palette.TextSecondary)
+                Text("https://${it.name}/mcp", style = SecrmType.MonoSmall, color = Palette.TextPrimary)
+            }
+            var pairing by remember { mutableStateOf<String?>(null) }
+            Spacer(Modifier.height(Space.md))
+            Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                PillButton("Pair Claude", PillStyle.Primary, Modifier.weight(1f)) { pairing = app.oauth.newPairingCode() }
+                PillButton("Disconnect Claude", PillStyle.Ghost, Modifier.weight(1f)) { app.oauth.revokeAll(); pairing = null }
+            }
+            pairing?.let {
+                Text("Pairing code (10 min, single use)", style = SecrmType.Caption, color = Palette.TextSecondary)
+                Text(it, style = SecrmType.Title, color = Palette.TextPrimary)
+            }
+
             Spacer(Modifier.height(Space.md))
             Row(
                 Modifier.fillMaxWidth(),
@@ -272,17 +290,13 @@ private fun McpSection(app: SecureRemoteApp) {
                             style = SecrmType.Label, color = Palette.TextPrimary,
                             fontWeight = FontWeight.Medium)
                         Text(
-                            "1.  Under Private network, connect Tailscale and turn on\n" +
-                            "    Public (Funnel).\n\n" +
-                            "2.  The URL is the phone's Tailscale name, e.g.\n" +
-                            "        https://secureremote-phone.tail1234.ts.net\n\n" +
-                            "3.  On claude.ai → Settings → Connectors → Add custom connector.\n" +
-                            "        URL:  https://your-phone.ts.net/mcp\n" +
-                            "        Auth: Bearer <token above>\n\n" +
-                            "4.  Save. The connector syncs to Claude Mobile automatically.\n\n" +
-                            "Why the cloud dials in: Anthropic’s servers reach your\n" +
-                            "endpoint from outside your network. A Tailscale 100.x IP\n" +
-                            "is not reachable from their side — you need a public URL.",
+                            "1.  Start the server, connect Tailscale and turn on Public (Funnel).\n" +
+                            "2.  claude.ai → Settings → Connectors → Add custom connector,\n" +
+                            "    URL: the Claude connector URL above.\n" +
+                            "3.  Tap Connect. When asked, tap Pair Claude here and enter the code.\n\n" +
+                            "Claude's servers reach the phone from the internet, so Funnel is\n" +
+                            "needed; your servers stay private and are reached through each\n" +
+                            "connection's Route through setting.",
                             style = SecrmType.Body, color = Palette.TextPrimary
                         )
                     }

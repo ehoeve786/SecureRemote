@@ -23,6 +23,7 @@ import io.ktor.server.routing.*
 class McpHttpServer(
     private val dispatcher: CallDispatcher,
     private val auth: McpAuth,
+    private val oauth: McpOAuth,
     private val localPort: Int = 7823,
     private val remotePort: Int = 7824,
     private val mcpPath: String = "/mcp"
@@ -54,9 +55,10 @@ class McpHttpServer(
                     when (decision) {
                         is McpAuth.Decision.Deny -> {
                             if (decision.status == 401) {
+                                // Points claude.ai at the OAuth metadata (RFC 9728).
                                 call.response.headers.append(
                                     HttpHeaders.WWWAuthenticate,
-                                    "Bearer realm=\"secrm\""
+                                    "Bearer resource_metadata=\"${call.base()}/.well-known/oauth-protected-resource\""
                                 )
                             }
                             call.respondText(
@@ -83,9 +85,10 @@ class McpHttpServer(
                     }
                 }
 
-                get(mcpPath) {
-                    call.respondText("secrm mcp server", status = HttpStatusCode.OK)
-                }
+                // No server-sent event stream.
+                get(mcpPath) { call.respond(HttpStatusCode.MethodNotAllowed) }
+
+                oauthRoutes(oauth, mcpPath)
             }
         }.start(wait = false)
         Log.i(TAG, "MCP listening on 127.0.0.1:$localPort and :$remotePort$mcpPath")
