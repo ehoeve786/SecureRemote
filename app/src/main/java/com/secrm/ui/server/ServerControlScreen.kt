@@ -109,7 +109,9 @@ private fun TailscaleSection(app: SecureRemoteApp) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Public (Funnel) for claude.ai", style = SecrmType.Body,
                 color = Palette.TextPrimary, modifier = Modifier.weight(1f))
-            Switch(public, { public = it; ts.public = it })
+            val ctx = LocalContext.current
+            // Funnel forwards to the MCP server, so it must be running.
+            Switch(public, { public = it; ts.public = it; if (it) McpServerService.start(ctx) })
         }
         if (public) ts.funnelProblem?.let { Text(it, style = SecrmType.Caption, color = Palette.Warning) }
         (st as? Tunnel.State.Up)?.takeIf { public && ts.funnelProblem == null }?.let { up ->
