@@ -50,10 +50,7 @@ class TerminalBridge(private val ssh: SshClientManager) {
         initialCols = 120,
         onKeyboardInput = ::send,
         onResize = { ssh.resizePty(it.columns, it.rows, it.widthPixels, it.heightPixels) },
-    ).also { e ->
-        // termlib hard-codes 1000 lines of scrollback; raise it so long output can be scrolled back to.
-        runCatching { e.javaClass.getDeclaredField("maxScrollbackLines").apply { isAccessible = true }.setInt(e, 10_000) }
-    }
+    )
 
     /** Opens the shell and starts the read loop. Returns false if no shell. */
     suspend fun start(): Boolean {
