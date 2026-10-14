@@ -29,7 +29,12 @@ func startSocks(dial dialFunc, logs *ring) (*socksProxy, error) {
 	b := make([]byte, 16)
 	_, _ = rand.Read(b)
 	p := &socksProxy{ln: ln, Port: ln.Addr().(*net.TCPAddr).Port, User: "secrm", Pass: hex.EncodeToString(b)}
-	srv := &socks5.Server{Logf: logs.logf, Dialer: dial, Username: p.User, Password: p.Pass}
+	// The SOCKS server dials with a 5 s deadline context and keeps it for the whole relay; a tunnel
+	// conn tied to it would die 5 s after connecting (just after SSH login). Drop the deadline.
+	noDeadline := func(ctx context.Context, network, addr string) (net.Conn, error) {
+		return dial(context.WithoutCancel(ctx), network, addr)
+	}
+	srv := &socks5.Server{Logf: logs.logf, Dialer: noDeadline, Username: p.User, Password: p.Pass}
 	go srv.Serve(ln)
 	return p, nil
 }
