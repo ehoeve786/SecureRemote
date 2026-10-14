@@ -35,8 +35,10 @@ class SshClientManager {
     private val _state = MutableStateFlow<SshState>(SshState.Disconnected)
     val state: StateFlow<SshState> = _state.asStateFlow()
 
-    fun shellInputStream(): InputStream? = runCatching { shell?.inputStream }.getOrNull()
-    fun shellOutputStream(): OutputStream? = runCatching { shell?.outputStream }.getOrNull()
+    private var shellIn: InputStream? = null
+    private var shellOut: OutputStream? = null
+    fun shellInputStream(): InputStream? = shellIn
+    fun shellOutputStream(): OutputStream? = shellOut
 
     suspend fun connect(cfg: SshConfig): Boolean = withContext(Dispatchers.IO) {
         try {
@@ -86,11 +88,15 @@ class SshClientManager {
     fun resizePty(cols: Int, rows: Int, w: Int, h: Int) { runCatching { shell?.setPtySize(cols, rows, w, h) } }
 
     suspend fun ensureShell(): Boolean = withContext(Dispatchers.IO) {
-        if (shell?.isConnected == true) return@withContext true
         val s = session ?: return@withContext false
+        // A fresh shell per terminal screen; closing the old one ends its reader.
+        runCatching { shell?.disconnect() }
         try {
             val ch = s.openChannel("shell") as ChannelShell
             ch.setPtyType("xterm-256color", 120, 40, 0, 0)
+            // Streams must exist before connect, or the banner and first prompt are dropped.
+            shellIn = ch.inputStream
+            shellOut = ch.outputStream
             ch.connect(10_000)
             shell = ch
             true

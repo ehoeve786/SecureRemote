@@ -20,9 +20,9 @@ import com.secrm.design.*
 @Composable
 fun TerminalScreen(app: SecureRemoteApp, onBack: () -> Unit) {
     val bridge = remember { TerminalBridge(app.ssh) }
-    var ready by remember { mutableStateOf(false) }
+    var ready by remember { mutableStateOf<Boolean?>(null) }
 
-    Column(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black)) {
+    Column(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black).safeDrawingPadding()) {
         Row(
             Modifier.fillMaxWidth().height(40.dp).padding(horizontal = Space.sm),
             verticalAlignment = Alignment.CenterVertically
@@ -35,6 +35,8 @@ fun TerminalScreen(app: SecureRemoteApp, onBack: () -> Unit) {
         }
         Box(Modifier.weight(1f)) {
             TerminalSurface(bridge = bridge, onReady = { ready = it }, modifier = Modifier.fillMaxSize())
+            if (ready == false) Text("Could not open a shell. Go back and reconnect.",
+                style = SecrmType.Body, color = Palette.Danger, modifier = Modifier.padding(Space.md))
         }
         // Extra-keys toolbar
         Row(
