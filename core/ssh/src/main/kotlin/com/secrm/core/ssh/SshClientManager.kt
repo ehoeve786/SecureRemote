@@ -45,6 +45,9 @@ class SshClientManager {
     private var session: Session? = null
     private var shell: ChannelShell? = null
 
+    /** The live session, for extra channels such as [SftpClient]. */
+    fun activeSession(): Session? = session?.takeIf { it.isConnected }
+
     /** Resolves [SshConfig.via] to its tunnel's proxy; throws, in plain words, if it can't come up. */
     var proxy: (String) -> Proxy = { error("No private network named $it") }
 

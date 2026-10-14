@@ -29,6 +29,11 @@ fun TerminalScreen(app: SecureRemoteApp, onBack: () -> Unit) {
     val bridge = remember { TerminalBridge(app.ssh) }
     var ready by remember { mutableStateOf<Boolean?>(null) }
     var selecting by remember { mutableStateOf<String?>(null) }
+    var sftpMode by remember { mutableStateOf(false) }
+    val sftp = remember { com.secrm.core.ssh.SftpClient(app.ssh) }
+    val focus = androidx.compose.ui.platform.LocalFocusManager.current
+    val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    androidx.activity.compose.BackHandler(sftpMode) { sftpMode = false }
     selecting?.let { TranscriptSelector(it) { selecting = null } }
 
     Column(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black).safeDrawingPadding()) {
@@ -40,11 +45,13 @@ fun TerminalScreen(app: SecureRemoteApp, onBack: () -> Unit) {
                 Icon(Icons.AutoMirrored.Rounded.KeyboardArrowLeft, "Back", tint = Palette.TextTertiary)
             }
             Spacer(Modifier.weight(1f))
+            ModeSwitch(sftpMode) { sftpMode = it; if (it) { focus.clearFocus(); keyboard?.hide() } }
+            Spacer(Modifier.weight(1f))
             val ctx = androidx.compose.ui.platform.LocalContext.current
-            Box(Modifier.clickableNoRipple { selecting = bridge.transcript() }.padding(Space.sm)) {
+            if (!sftpMode) Box(Modifier.clickableNoRipple { selecting = bridge.transcript() }.padding(Space.sm)) {
                 Text("Select text", style = SecrmType.MonoSmall, color = Palette.Indigo)
             }
-            Box(Modifier.clickableNoRipple {
+            if (!sftpMode) Box(Modifier.clickableNoRipple {
                 (ctx.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager)
                     .setPrimaryClip(android.content.ClipData.newPlainText("command output", bridge.lastOutput()))
             }.padding(Space.sm)) {
@@ -52,12 +59,17 @@ fun TerminalScreen(app: SecureRemoteApp, onBack: () -> Unit) {
             }
         }
         Box(Modifier.weight(1f)) {
+            // The terminal stays composed (its shell keeps running) under the file browser.
             TerminalSurface(bridge = bridge, onReady = { ready = it }, modifier = Modifier.fillMaxSize())
             if (ready == false) Text("Could not open a shell. Go back and reconnect.",
                 style = SecrmType.Body, color = Palette.Danger, modifier = Modifier.padding(Space.md))
+            if (sftpMode) com.secrm.ui.sftp.SftpPanel(
+                sftp, modifier = Modifier.fillMaxSize(),
+                onCdInTerminal = { dir -> bridge.send("cd '" + dir.replace("'", "'\\''") + "'\r"); sftpMode = false },
+            )
         }
         // Extra-keys toolbar
-        Row(
+        if (!sftpMode) Row(
             Modifier.fillMaxWidth()
                 .padding(horizontal = Space.md, vertical = Space.sm)
                 .background(Palette.Surface2.copy(alpha = 0.9f), RoundedCornerShape(Space.pillRadius))
@@ -169,6 +181,20 @@ private fun TranscriptSelector(text: String, onClose: () -> Unit) {
                         modifier = Modifier.fillMaxWidth().background(if (selected) Palette.Indigo.copy(alpha = 0.4f) else androidx.compose.ui.graphics.Color.Transparent))
                 }
             }
+        }
+    }
+}
+
+/** SSH | SFTP switch for the connected host. */
+@Composable
+private fun ModeSwitch(sftp: Boolean, onChange: (Boolean) -> Unit) {
+    Row(Modifier.background(Palette.Surface2, RoundedCornerShape(Space.pillRadius)).padding(2.dp)) {
+        listOf("SSH" to false, "SFTP" to true).forEach { (label, mode) ->
+            val on = sftp == mode
+            Box(
+                Modifier.background(if (on) Palette.Indigo else androidx.compose.ui.graphics.Color.Transparent, RoundedCornerShape(Space.pillRadius))
+                    .clickableNoRipple { onChange(mode) }.padding(horizontal = 14.dp, vertical = 5.dp)
+            ) { Text(label, style = SecrmType.MonoSmall, color = if (on) androidx.compose.ui.graphics.Color.White else Palette.TextSecondary) }
         }
     }
 }
