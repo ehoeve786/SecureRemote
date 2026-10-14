@@ -19,12 +19,15 @@ class TerminalBridge(private val ssh: SshClientManager) {
     private val writer = Executors.newSingleThreadExecutor()
     @Volatile private var out: OutputStream? = null
 
-    // Raw session output (last ~256 KB), for copying long output without drag-selecting.
+    // Raw session output (last ~256 KB) and where it stood when Enter was last pressed, for copying
+    // a long command's output without drag-selecting.
     private val log = java.io.ByteArrayOutputStream()
+    private var mark = 0
 
-    /** The session's output as plain text: escape sequences and carriage returns removed. */
-    fun transcript(): String = synchronized(log) { log.toString(Charsets.UTF_8.name()) }
+    /** Output of the last command run, as plain text: its echo line and the new prompt left out. */
+    fun lastOutput(): String = synchronized(log) { String(log.toByteArray(), mark, log.size() - mark, Charsets.UTF_8) }
         .replace(Regex("\u001B(\\[[0-?]*[ -/]*[@-~]|\\][^\u0007\u001B]*(\u0007|\u001B\\\\)?|[@-Z\\\\-_])|\r"), "")
+        .substringAfter('\n', "").substringBeforeLast('\n', "")
 
     val emulator = TerminalEmulatorFactory.create(
         initialRows = 40,
@@ -46,7 +49,10 @@ class TerminalBridge(private val ssh: SshClientManager) {
                     if (n < 0) break
                     emulator.writeInput(buf, 0, n)
                     synchronized(log) {
-                        if (log.size() > 256 * 1024) log.toByteArray().let { log.reset(); log.write(it, it.size / 2, it.size - it.size / 2) }
+                        if (log.size() > 256 * 1024) log.toByteArray().let {
+                            val drop = it.size / 2
+                            log.reset(); log.write(it, drop, it.size - drop); mark = maxOf(0, mark - drop)
+                        }
                         log.write(buf, 0, n)
                     }
                 }
@@ -61,6 +67,7 @@ class TerminalBridge(private val ssh: SshClientManager) {
     fun send(text: String) = send(text.toByteArray())
 
     fun send(data: ByteArray) {
+        if ('\r'.code.toByte() in data) synchronized(log) { mark = log.size() }
         writer.execute {
             runCatching { out?.run { write(data); flush() } }.onFailure { note("send failed: $it") }
         }

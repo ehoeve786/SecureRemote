@@ -34,7 +34,7 @@ fun TerminalScreen(app: SecureRemoteApp, onBack: () -> Unit) {
             val ctx = androidx.compose.ui.platform.LocalContext.current
             Box(Modifier.clickableNoRipple {
                 (ctx.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager)
-                    .setPrimaryClip(android.content.ClipData.newPlainText("terminal output", bridge.transcript()))
+                    .setPrimaryClip(android.content.ClipData.newPlainText("command output", bridge.lastOutput()))
             }.padding(Space.sm)) {
                 Text("Copy output", style = SecrmType.MonoSmall, color = Palette.Indigo)
             }
