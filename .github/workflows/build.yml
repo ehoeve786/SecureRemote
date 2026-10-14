@@ -25,7 +25,7 @@ jobs:
         working-directory: core/gonet/go
         run: go vet ./...
       - uses: gradle/actions/setup-gradle@v5
-        with: { gradle-version: "8.14.3" }
+        with: { gradle-version: "9.7.1" }
       - name: Signing key
         env: { KS: "${{ secrets.SIGNING_KEYSTORE }}" }
         run: |
@@ -35,7 +35,7 @@ jobs:
         run: set -o pipefail; gradle :app:assembleDebug --no-daemon 2>&1 | tee build.log
       - if: failure()
         run: |
-          grep -E '^e: |What went wrong|Could not (find|resolve|GET)' -A3 build.log | head -60 | sed 's/^/::error::/'
+          grep -E '^e: |What went wrong|Could not (find|resolve|GET)|Dependency .* requires|^> .*issues? (was|were) found' -A3 build.log | head -60 | sed 's/^/::error::/'
       - uses: actions/upload-artifact@v4
         with:
           name: app-debug
