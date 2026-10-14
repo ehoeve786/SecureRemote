@@ -33,15 +33,15 @@ class TerminalBridge(private val ssh: SshClientManager) {
         out = ssh.shellOutputStream()
         thread(isDaemon = true, name = "ssh-term-read") {
             val buf = ByteArray(8192)
-            runCatching {
+            val why = runCatching {
                 while (true) {
                     val n = input.read(buf)
                     if (n < 0) break
                     emulator.writeInput(buf, 0, n)
                 }
-            }
+            }.exceptionOrNull()
             // Say so instead of leaving a dead terminal that silently ignores typing.
-            emulator.writeInput("\r\n\u001b[33m[connection closed]\u001b[0m\r\n".toByteArray())
+            note("connection closed" + (why?.let { ": $it" } ?: ""))
         }
         return true
     }
@@ -49,7 +49,14 @@ class TerminalBridge(private val ssh: SshClientManager) {
     fun send(text: String) = send(text.toByteArray())
 
     fun send(data: ByteArray) {
-        writer.execute { runCatching { out?.run { write(data); flush() } } }
+        writer.execute {
+            runCatching { out?.run { write(data); flush() } }.onFailure { note("send failed: $it") }
+        }
+    }
+
+    private fun note(msg: String) {
+        android.util.Log.w("secrm-term", msg)
+        emulator.writeInput("\r\n\u001b[33m[$msg]\u001b[0m\r\n".toByteArray())
     }
 }
 

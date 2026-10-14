@@ -2,6 +2,7 @@ package srnet
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"strings"
 	"sync"
@@ -35,6 +36,10 @@ func newRing(max int) *ring { return &ring{max: max} }
 
 func (r *ring) logf(format string, args ...any) {
 	line := time.Now().Format("15:04:05 ") + strings.TrimRight(fmt.Sprintf(format, args...), "\n")
+	// Problems also go to logcat (gomobile routes the log package there, tag GoLog).
+	if l := strings.ToLower(line); strings.Contains(l, "srnet:") || strings.Contains(l, "fail") || strings.Contains(l, "error") {
+		log.Print(line)
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.lines = append(r.lines, line)
