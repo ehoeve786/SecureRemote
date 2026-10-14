@@ -21,6 +21,8 @@ import com.secrm.design.*
 fun TerminalScreen(app: SecureRemoteApp, onBack: () -> Unit) {
     val bridge = remember { TerminalBridge(app.ssh) }
     var ready by remember { mutableStateOf<Boolean?>(null) }
+    var selecting by remember { mutableStateOf<String?>(null) }
+    selecting?.let { TranscriptSelector(it) { selecting = null } }
 
     Column(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black).safeDrawingPadding()) {
         Row(
@@ -32,6 +34,9 @@ fun TerminalScreen(app: SecureRemoteApp, onBack: () -> Unit) {
             }
             Spacer(Modifier.weight(1f))
             val ctx = androidx.compose.ui.platform.LocalContext.current
+            Box(Modifier.clickableNoRipple { selecting = bridge.transcript() }.padding(Space.sm)) {
+                Text("Select text", style = SecrmType.MonoSmall, color = Palette.Indigo)
+            }
             Box(Modifier.clickableNoRipple {
                 (ctx.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager)
                     .setPrimaryClip(android.content.ClipData.newPlainText("command output", bridge.lastOutput()))
@@ -74,5 +79,56 @@ private fun Key(label: String, onClick: () -> Unit) {
         contentAlignment = Alignment.Center
     ) {
         Text(label, style = SecrmType.MonoSmall, color = Palette.TextPrimary)
+    }
+}
+
+/**
+ * The session as plain text in a native, read-only text view. Android's own selection handles
+ * scroll the view when dragged to its top or bottom edge, so a selection can span any length.
+ */
+@Composable
+private fun TranscriptSelector(text: String, onClose: () -> Unit) {
+    androidx.compose.ui.window.Dialog(
+        onDismissRequest = onClose,
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Column(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black).safeDrawingPadding()) {
+            var view by remember { mutableStateOf<android.widget.EditText?>(null) }
+            Row(
+                Modifier.fillMaxWidth().height(40.dp).padding(horizontal = Space.sm),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = onClose) {
+                    Icon(Icons.AutoMirrored.Rounded.KeyboardArrowLeft, "Back", tint = Palette.TextTertiary)
+                }
+                Text("Long-press, then drag a handle to the edge to scroll", style = SecrmType.MonoSmall,
+                    color = Palette.TextTertiary, modifier = Modifier.weight(1f))
+                Box(Modifier.clickableNoRipple { view?.let { it.requestFocus(); it.selectAll() } }.padding(Space.sm)) {
+                    Text("All", style = SecrmType.MonoSmall, color = Palette.Indigo)
+                }
+            }
+            androidx.compose.ui.viewinterop.AndroidView(
+                modifier = Modifier.fillMaxSize().padding(horizontal = Space.sm),
+                factory = { ctx ->
+                    android.widget.EditText(ctx).apply {
+                        setText(text)
+                        // Selectable but not editable, and no keyboard.
+                        keyListener = null
+                        showSoftInputOnFocus = false
+                        setTextIsSelectable(true)
+                        isVerticalScrollBarEnabled = true
+                        gravity = android.view.Gravity.TOP or android.view.Gravity.START
+                        typeface = android.graphics.Typeface.MONOSPACE
+                        textSize = 12f
+                        setTextColor(android.graphics.Color.WHITE)
+                        setHighlightColor(0x665B6CFF)
+                        background = null
+                        setPadding(0, 0, 0, 0)
+                        post { setSelection(this.text.length) } // open at the latest output
+                        view = this
+                    }
+                },
+            )
+        }
     }
 }

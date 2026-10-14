@@ -15,6 +15,8 @@ import java.util.concurrent.Executors
 import kotlin.concurrent.thread
 
 /** Pipes an SSH shell channel into ConnectBot termlib's emulator. */
+private val ANSI = Regex("\u001B(\\[[0-?]*[ -/]*[@-~]|\\][^\u0007\u001B]*(\u0007|\u001B\\\\)?|[@-Z\\\\-_])|\r")
+
 class TerminalBridge(private val ssh: SshClientManager) {
     private val writer = Executors.newSingleThreadExecutor()
     @Volatile private var out: OutputStream? = null
@@ -25,9 +27,23 @@ class TerminalBridge(private val ssh: SshClientManager) {
     private var mark = 0
 
     /** Output of the last command run, as plain text: its echo line and the new prompt left out. */
-    fun lastOutput(): String = synchronized(log) { String(log.toByteArray(), mark, log.size() - mark, Charsets.UTF_8) }
-        .replace(Regex("\u001B(\\[[0-?]*[ -/]*[@-~]|\\][^\u0007\u001B]*(\u0007|\u001B\\\\)?|[@-Z\\\\-_])|\r"), "")
+    fun lastOutput(): String = plain(synchronized(log) { String(log.toByteArray(), mark, log.size() - mark, Charsets.UTF_8) })
         .substringAfter('\n', "").substringBeforeLast('\n', "")
+
+    /** The whole session (up to the last ~256KB) as plain text, for the native text selector. */
+    fun transcript(): String = plain(synchronized(log) { log.toString(Charsets.UTF_8) })
+
+    /** Drops escape sequences and carriage returns, and applies backspaces. */
+    private fun plain(raw: String): String {
+        val s = raw.replace(ANSI, "")
+        val sb = StringBuilder(s.length)
+        for (c in s) when (c) {
+            '\b' -> if (sb.isNotEmpty() && sb.last() != '\n') sb.setLength(sb.length - 1)
+            '\u0007' -> {}
+            else -> sb.append(c)
+        }
+        return sb.toString()
+    }
 
     val emulator = TerminalEmulatorFactory.create(
         initialRows = 40,
