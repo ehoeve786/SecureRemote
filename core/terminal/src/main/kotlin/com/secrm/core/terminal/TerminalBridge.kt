@@ -2,6 +2,8 @@ package com.secrm.core.terminal
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.sp
 import com.secrm.core.ssh.SshClientManager
@@ -54,11 +56,19 @@ fun TerminalSurface(
     onReady: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    LaunchedEffect(bridge) { onReady(bridge.start()) }
+    // The keyboard's input only reaches the terminal once it holds Compose focus (as in Tidegate).
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(bridge) {
+        val ok = bridge.start()
+        onReady(ok)
+        if (ok) runCatching { focus.requestFocus() }
+    }
     Terminal(
         terminalEmulator = bridge.emulator,
         modifier = modifier,
         initialFontSize = 13.sp,
         keyboardEnabled = true,
+        focusRequester = focus,
+        onTerminalTap = { runCatching { focus.requestFocus() } },
     )
 }
