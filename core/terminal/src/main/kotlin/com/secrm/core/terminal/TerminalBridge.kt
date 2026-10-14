@@ -3,6 +3,7 @@ package com.secrm.core.terminal
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.sp
@@ -56,13 +57,12 @@ fun TerminalSurface(
     onReady: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    // The keyboard's input only reaches the terminal once it holds Compose focus (as in Tidegate).
+    // The keyboard's input only reaches the terminal once it holds Compose focus. Take it on the
+    // first frame, as Tidegate does, before termlib shows the IME: requesting it later (after a slow
+    // tunnelled connect) re-targets focus away from the IME's live input connection.
     val focus = remember { FocusRequester() }
-    LaunchedEffect(bridge) {
-        val ok = bridge.start()
-        onReady(ok)
-        if (ok) runCatching { focus.requestFocus() }
-    }
+    LaunchedEffect(Unit) { withFrameNanos {}; runCatching { focus.requestFocus() } }
+    LaunchedEffect(bridge) { onReady(bridge.start()) }
     Terminal(
         terminalEmulator = bridge.emulator,
         modifier = modifier,
