@@ -40,6 +40,8 @@ class TerminalBridge(private val ssh: SshClientManager) {
                     emulator.writeInput(buf, 0, n)
                 }
             }
+            // Say so instead of leaving a dead terminal that silently ignores typing.
+            emulator.writeInput("\r\n\u001b[33m[connection closed]\u001b[0m\r\n".toByteArray())
         }
         return true
     }
