@@ -12,8 +12,8 @@ class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        // Keep the MCP server up while Funnel publishes it.
-        if ((application as SecureRemoteApp).tailscale.run { enabled && public }) com.secrm.service.McpServerService.start(this)
+        // A foreground service keeps the tailnet's network alive in the background (and serves Funnel).
+        if ((application as SecureRemoteApp).tailscale.enabled) com.secrm.service.McpServerService.start(this)
         setContent {
             SecrmTheme { SecrmNavHost(app = application as SecureRemoteApp) }
         }

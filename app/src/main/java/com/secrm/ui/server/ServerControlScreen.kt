@@ -97,6 +97,7 @@ private fun TailscaleSection(app: SecureRemoteApp) {
     val ts = app.tailscale
     val st by ts.state.collectAsState()
     val uri = LocalUriHandler.current
+    val ctx = LocalContext.current
     var public by remember { mutableStateOf(ts.public) }
     NetworkCard("Tailscale", st,
         "Joins your tailnet in-app (no VPN). SSH reaches tailnet hosts and subnet routes; " +
@@ -109,23 +110,22 @@ private fun TailscaleSection(app: SecureRemoteApp) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Public (Funnel) for claude.ai", style = SecrmType.Body,
                 color = Palette.TextPrimary, modifier = Modifier.weight(1f))
-            val ctx = LocalContext.current
             // Funnel forwards to the MCP server, so it must be running.
             Switch(public, { public = it; ts.public = it; if (it) McpServerService.start(ctx) })
         }
         if (public) ts.funnelProblem?.let { Text(it, style = SecrmType.Caption, color = Palette.Warning) }
         (st as? Tunnel.State.Up)?.takeIf { public && ts.funnelProblem == null }?.let { up ->
             val url = "https://${up.name}/mcp"
-            val ctx = LocalContext.current
             Text(url, style = SecrmType.MonoSmall, color = Palette.TextPrimary)
             PillButton("Copy MCP URL", PillStyle.Primary, Modifier.fillMaxWidth()) {
                 (ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
                     .setPrimaryClip(ClipData.newPlainText("MCP URL", url))
             }
         }
-        OnOff(st, ts::start, ts::stop)
+        // Android cuts a background app's network unless it runs a foreground service, which
+        // would drop the tailnet (and Funnel) as soon as you switch apps.
+        OnOff(st, { ts.start(); McpServerService.start(ctx) }, ts::stop)
         if (st !is Tunnel.State.Idle) PillButton("Sign out", PillStyle.Ghost, Modifier.fillMaxWidth()) { ts.logout() }
-        val ctx = LocalContext.current
         PillButton("Copy logs", PillStyle.Ghost, Modifier.fillMaxWidth()) {
             (ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
                 .setPrimaryClip(ClipData.newPlainText("tailscale logs", ts.logs()))

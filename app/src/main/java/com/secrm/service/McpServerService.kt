@@ -45,7 +45,7 @@ class McpServerService : Service() {
         startForeground(NOTIF_ID, NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(android.R.drawable.stat_sys_upload)
             .setContentTitle("Secure Remote Manager")
-            .setContentText("MCP server on 127.0.0.1:7823")
+            .setContentText("MCP server and private network running")
             .setOngoing(true).build())
 
         if (server?.isRunning() == true) return
