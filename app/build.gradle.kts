@@ -13,6 +13,7 @@ android {
         targetSdk = 34
         versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toInt() ?: 1
         versionName = "1.0.0"
+        ndk { abiFilters += "arm64-v8a" } // phones only; no emulator/32-bit builds
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -28,6 +29,8 @@ android {
         buildTypes.getByName("debug").signingConfig = ci
     }
     packaging {
+        // Compress native libraries in the APK (the Go networking library is large).
+        jniLibs.useLegacyPackaging = true
         resources.excludes += setOf(
             "META-INF/versions/**/OSGI-INF/MANIFEST.MF",
             "META-INF/versions/**/OSGI-INF/",

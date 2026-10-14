@@ -28,7 +28,7 @@ val gomobileBind =
         commandLine(
             "gomobile",
             "bind",
-            "-target=android/arm64,android/amd64",
+            "-target=android/arm64",
             "-androidapi",
             "30",
             "-javapkg",
