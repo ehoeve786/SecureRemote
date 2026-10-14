@@ -12,7 +12,7 @@ android {
     }
 }
 dependencies {
-    implementation(project(":core:gonet"))
+    api(project(":core:gonet"))
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 }
 kotlin { compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) } }

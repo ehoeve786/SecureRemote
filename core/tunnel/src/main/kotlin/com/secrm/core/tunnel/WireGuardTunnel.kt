@@ -59,6 +59,8 @@ class WireGuardTunnel(
     }
 
     override fun stopNative() { tunnel?.stop() }
+    override fun dial(host: String, port: Int, timeoutMs: Int) =
+        (tunnel ?: error("WireGuard is not running")).dial(host, port.toLong(), timeoutMs.toLong())
     override fun status(): String? = tunnel?.status()
     override fun logs(): String = runCatching { tunnel?.logs() }.getOrNull().orEmpty()
 

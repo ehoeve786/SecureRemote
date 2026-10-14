@@ -1,6 +1,6 @@
 // Package srnet is SecureRemote's Go networking: an embedded Tailscale node (tsnet) and a userspace
-// WireGuard tunnel, adapted from PocketPilot's ppnet. Each gives the app's SSH client a loopback
-// SOCKS5 proxy into its private network; the Tailscale node also forwards HTTPS from the tailnet (or
+// WireGuard tunnel, adapted from PocketPilot's ppnet. Each lets the app's SSH client Dial into its
+// private network (as Tidegate does); the Tailscale node also forwards HTTPS from the tailnet (or
 // Funnel) to the MCP server's remote port.
 //
 // It is built into an AAR with gomobile, so its exported API sticks to strings, ints, bools and
@@ -34,7 +34,6 @@ type Node struct {
 
 	mu        sync.Mutex
 	srv       *tsnet.Server
-	socks     *socksProxy
 	listener  net.Listener
 	httpSrv   *http.Server
 	public    bool
@@ -71,13 +70,7 @@ func (n *Node) Start(authKey string) error {
 		n.lastError = err.Error()
 		return err
 	}
-	socks, err := startSocks(n.dial, n.logs)
-	if err != nil {
-		_ = srv.Close()
-		n.lastError = err.Error()
-		return err
-	}
-	n.srv, n.socks = srv, socks
+	n.srv = srv
 	go n.serveWhenRunning(srv)
 	return nil
 }
@@ -118,16 +111,16 @@ func (n *Node) setDirsLocked() {
 	}
 }
 
-// dial sends every connection through the tailnet, MagicDNS names and subnet routes included. A
-// connection routed via Tailscale never falls back to the phone's own network (as in Tidegate).
-func (n *Node) dial(ctx context.Context, network, addr string) (net.Conn, error) {
+// Dial opens a TCP connection through the tailnet to host:port (a MagicDNS name, Tailscale IP or
+// subnet-route address). The app's SSH client reads and writes it directly, as in Tidegate.
+func (n *Node) Dial(host string, port, timeoutMs int) (*Conn, error) {
 	n.mu.Lock()
 	srv := n.srv
 	n.mu.Unlock()
 	if srv == nil {
 		return nil, errors.New("Tailscale is not running")
 	}
-	return srv.Dial(ctx, network, addr)
+	return dialConn(srv.Dial, host, port, timeoutMs)
 }
 
 // serveWhenRunning waits until the node is logged in, then opens the HTTPS listener.
@@ -169,8 +162,6 @@ func (n *Node) Stop() {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	n.closeListenerLocked()
-	n.socks.close()
-	n.socks = nil
 	if n.srv != nil {
 		_ = n.srv.Close()
 		n.srv = nil
@@ -205,14 +196,13 @@ type nodeStatus struct {
 	// FunnelProblem names the tailnet setting Funnel still needs, or is empty when Funnel is allowed.
 	FunnelProblem string `json:"funnelProblem,omitempty"`
 	Error         string `json:"error,omitempty"`
-	*socksProxy
 }
 
 // Status reports the node's state as JSON.
 func (n *Node) Status() string {
 	n.mu.Lock()
 	srv := n.srv
-	st := nodeStatus{Running: srv != nil, Serving: n.httpSrv != nil, Public: n.public, Error: n.lastError, socksProxy: n.socks}
+	st := nodeStatus{Running: srv != nil, Serving: n.httpSrv != nil, Public: n.public, Error: n.lastError}
 	n.mu.Unlock()
 	if srv != nil {
 		if lc, err := srv.LocalClient(); err == nil {

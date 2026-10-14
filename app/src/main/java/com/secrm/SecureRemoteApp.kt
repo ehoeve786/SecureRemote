@@ -45,9 +45,9 @@ class SecureRemoteApp : Application() {
         ssh.proxy = { via ->
             val (t, name) = if (via == "wireguard") wireguard to "WireGuard" else tailscale to "Tailscale"
             t.start() // no-op if already running
-            val s = runBlocking { withTimeoutOrNull(30_000) { t.state.first { it is Tunnel.State.Up }; t.socks } }
+            runBlocking { withTimeoutOrNull(30_000) { t.state.first { it is Tunnel.State.Up } } }
                 ?: error("$name isn't connected. Check Settings → Private network.")
-            com.jcraft.jsch.ProxySOCKS5("127.0.0.1", s.port).apply { setUserPasswd(s.user, s.pass) }
+            com.secrm.data.TunnelProxy { host, port -> t.dial(host, port, 30_000) }
         }
         audit = McpAuditLog(this)
         keys = KeyRepository(config)

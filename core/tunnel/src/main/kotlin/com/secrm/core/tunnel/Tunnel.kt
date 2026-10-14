@@ -12,12 +12,9 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 
-/** Loopback SOCKS5 proxy into a tunnel's private network. */
-data class Socks(val port: Int, val user: String, val pass: String)
-
 /**
  * A private network (Tailscale or WireGuard) running in-process through the Go library, after
- * PocketPilot's NetworkProvider. The SSH client reaches it through [socks].
+ * PocketPilot's NetworkProvider. The SSH client reaches it through [dial].
  */
 abstract class Tunnel(context: Context, private val scope: CoroutineScope, key: String) {
     sealed interface State {
@@ -36,8 +33,6 @@ abstract class Tunnel(context: Context, private val scope: CoroutineScope, key: 
     /** Whether the owner turned it on; survives restarts so [resume] can bring it back. */
     val enabled get() = prefs.getBoolean("enabled", false)
 
-    @Volatile var socks: Socks? = null; private set
-
     /** Native calls run one at a time, in order, so a quick stop-then-start cannot interleave. */
     protected val native = Dispatchers.IO.limitedParallelism(1)
     private var poller: Job? = null
@@ -47,6 +42,9 @@ abstract class Tunnel(context: Context, private val scope: CoroutineScope, key: 
     protected abstract fun status(): String?
     protected abstract fun stateOf(status: JSONObject): State
     abstract fun logs(): String
+
+    /** Opens a TCP connection through the tunnel (Tidegate's approach: no local proxy hop). */
+    abstract fun dial(host: String, port: Int, timeoutMs: Int): com.secrm.gonet.gen.srnet.Conn
 
     fun resume() { if (enabled) start() }
 
@@ -65,8 +63,6 @@ abstract class Tunnel(context: Context, private val scope: CoroutineScope, key: 
             }
             while (isActive) {
                 status()?.let { runCatching { JSONObject(it) }.getOrNull() }?.let { st ->
-                    socks = st.optInt("socksPort").takeIf { it > 0 }
-                        ?.let { Socks(it, st.optString("socksUser"), st.optString("socksPass")) }
                     mutableState.value = stateOf(st)
                 }
                 delay(if (state.value is State.Up) 5_000 else 1_000)
@@ -80,7 +76,6 @@ abstract class Tunnel(context: Context, private val scope: CoroutineScope, key: 
         prefs.edit().putBoolean("enabled", false).apply()
         poller?.cancel()
         poller = null
-        socks = null
         scope.launch(native) { runCatching { stopNative() } }
         mutableState.value = State.Idle
     }

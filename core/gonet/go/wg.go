@@ -2,7 +2,6 @@ package srnet
 
 import (
 	"bufio"
-	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -21,7 +20,7 @@ import (
 
 // Tunnel is a userspace WireGuard interface on its own network stack inside the app: no VpnService,
 // and the rest of the phone's traffic is untouched. The app's SSH client reaches the peers'
-// AllowedIPs through its SOCKS5 proxy. Adapted from PocketPilot's ppnet.Tunnel.
+// AllowedIPs through Dial. Adapted from PocketPilot's ppnet.Tunnel.
 type Tunnel struct {
 	logs *ring
 
@@ -29,7 +28,6 @@ type Tunnel struct {
 	dev       *device.Device
 	tnet      *wgnetstack.Net
 	addresses []netip.Prefix
-	socks     *socksProxy
 	lastError string
 }
 
@@ -76,37 +74,30 @@ func (t *Tunnel) Start(config string) error {
 		t.lastError = err.Error()
 		return err
 	}
-	socks, err := startSocks(t.dial, t.logs)
-	if err != nil {
-		dev.Close()
-		t.lastError = err.Error()
-		return err
-	}
-	t.dev, t.tnet, t.socks, t.addresses = dev, tnet, socks, cfg.Addresses
+	t.dev, t.tnet, t.addresses = dev, tnet, cfg.Addresses
 	t.logs.logf("srnet: WireGuard up as %s", addrs[0])
 	return nil
 }
 
-// dial sends every connection through the tunnel; names resolve with the config's DNS servers.
-func (t *Tunnel) dial(ctx context.Context, network, addr string) (net.Conn, error) {
+// Dial opens a TCP connection through the tunnel; names resolve with the config's DNS servers.
+func (t *Tunnel) Dial(host string, port, timeoutMs int) (*Conn, error) {
 	t.mu.Lock()
 	tn := t.tnet
 	t.mu.Unlock()
 	if tn == nil {
 		return nil, errors.New("WireGuard is not running")
 	}
-	return tn.DialContext(ctx, network, addr)
+	return dialConn(tn.DialContext, host, port, timeoutMs)
 }
 
 // Stop takes the tunnel down.
 func (t *Tunnel) Stop() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.socks.close()
 	if t.dev != nil {
 		t.dev.Close()
 	}
-	t.dev, t.tnet, t.socks, t.addresses = nil, nil, nil, nil
+	t.dev, t.tnet, t.addresses = nil, nil, nil
 }
 
 type wgStatus struct {
@@ -115,13 +106,12 @@ type wgStatus struct {
 	// LastHandshake is the newest handshake with any peer, in Unix milliseconds, or 0 if none yet.
 	LastHandshake int64  `json:"lastHandshake"`
 	Error         string `json:"error,omitempty"`
-	*socksProxy
 }
 
 // Status reports the tunnel's state as JSON.
 func (t *Tunnel) Status() string {
 	t.mu.Lock()
-	st := wgStatus{Running: t.dev != nil, Error: t.lastError, socksProxy: t.socks}
+	st := wgStatus{Running: t.dev != nil, Error: t.lastError}
 	for _, a := range t.addresses {
 		st.Address = append(st.Address, a.Addr().String())
 	}

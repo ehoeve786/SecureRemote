@@ -46,6 +46,8 @@ class TailscaleTunnel(
     }
 
     override fun stopNative() { node?.stop() }
+    override fun dial(host: String, port: Int, timeoutMs: Int) =
+        (node ?: error("Tailscale is not running")).dial(host, port.toLong(), timeoutMs.toLong())
     override fun status(): String? = node?.status()
     override fun logs(): String = runCatching { node?.logs() }.getOrNull().orEmpty()
 
