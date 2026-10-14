@@ -101,6 +101,10 @@ class BitwardenVault(private val config: EncryptedConfigStore) {
     private fun http(url: String, form: String?, bearer: String?): JsonObject {
         val c = URL(url).openConnection() as HttpURLConnection
         bearer?.let { c.setRequestProperty("Authorization", "Bearer $it") }
+        // Bitwarden rejects requests that don't identify the client and its version.
+        c.setRequestProperty("Bitwarden-Client-Name", "cli")
+        c.setRequestProperty("Bitwarden-Client-Version", "2026.9.0")
+        c.setRequestProperty("Device-Type", "0")
         form?.let {
             c.doOutput = true
             c.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
