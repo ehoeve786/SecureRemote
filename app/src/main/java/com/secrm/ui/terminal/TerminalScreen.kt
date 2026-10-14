@@ -104,18 +104,22 @@ private fun TranscriptSelector(text: String, onClose: () -> Unit) {
     val ctx = androidx.compose.ui.platform.LocalContext.current
     fun lineAt(y: Float) = list.layoutInfo.visibleItemsInfo.let { v -> (v.firstOrNull { y < it.offset + it.size } ?: v.lastOrNull())?.index }
 
-    // Edge auto-scroll while dragging.
+    // Edge auto-scroll while dragging: px/second from the finger's depth into the edge zone (time-based,
+    // so the same on 60 and 120 Hz screens): ~40 lines/s at the zone's start, ~300 lines/s past the edge.
     LaunchedEffect(dragY != null) {
+        var last = withFrameNanos { it }
         while (true) {
+            val now = withFrameNanos { it }
+            val dt = (now - last) / 1e9f; last = now
             val y = dragY ?: break
-            val edge = list.layoutInfo.viewportSize.height * 0.15f
-            val depth = when {
-                y < edge -> y - edge
-                y > list.layoutInfo.viewportSize.height - edge -> y - (list.layoutInfo.viewportSize.height - edge)
-                else -> 0f
-            }.coerceIn(-2 * edge, 2 * edge)
-            if (depth != 0f) { list.scrollBy(depth * 0.35f); lineAt(y)?.let { end = it } }
-            withFrameNanos {}
+            val h = list.layoutInfo.viewportSize.height
+            val zone = h * 0.2f
+            val depth = when { y < zone -> y - zone; y > h - zone -> y - (h - zone); else -> 0f } / zone // -1..1 (beyond when past the edge)
+            if (depth != 0f) {
+                val f = kotlin.math.abs(depth).coerceAtMost(2f)
+                list.scrollBy(kotlin.math.sign(depth) * (1600f + 4500f * f * f) * dt)
+                lineAt(y)?.let { end = it }
+            }
         }
     }
 
