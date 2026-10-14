@@ -42,6 +42,7 @@ class TerminalBridge(private val ssh: SshClientManager) {
             }.exceptionOrNull()
             // Say so instead of leaving a dead terminal that silently ignores typing.
             note("connection closed" + (why?.let { ": $it" } ?: ""))
+            emulator.writeInput(("\u001b[90m" + ssh.recentLog().replace("\n", "\r\n") + "\u001b[0m\r\n").toByteArray())
         }
         return true
     }

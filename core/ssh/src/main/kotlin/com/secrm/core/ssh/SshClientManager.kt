@@ -26,7 +26,18 @@ data class SshConfig(
     val via: String? = null,
 )
 
+private val log = ArrayDeque<String>()
+
 class SshClientManager {
+    init {
+        JSch.setLogger(object : Logger {
+            override fun isEnabled(level: Int) = level >= Logger.INFO
+            override fun log(level: Int, message: String) = synchronized(log) {
+                log.addLast(message); if (log.size > 12) log.removeFirst()
+            }
+        })
+    }
+
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var session: Session? = null
     private var shell: ChannelShell? = null
@@ -86,6 +97,9 @@ class SshClientManager {
             false
         }
     }
+
+    /** JSch's recent log lines (info and above), for showing why a session ended. */
+    fun recentLog(): String = synchronized(log) { log.joinToString("\n") }
 
     fun resizePty(cols: Int, rows: Int, w: Int, h: Int) { runCatching { shell?.setPtySize(cols, rows, w, h) } }
 

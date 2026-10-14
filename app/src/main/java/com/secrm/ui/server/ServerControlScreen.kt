@@ -114,6 +114,11 @@ private fun TailscaleSection(app: SecureRemoteApp) {
         if (public) ts.funnelProblem?.let { Text(it, style = SecrmType.Caption, color = Palette.Warning) }
         OnOff(st, ts::start, ts::stop)
         if (st !is Tunnel.State.Idle) PillButton("Sign out", PillStyle.Ghost, Modifier.fillMaxWidth()) { ts.logout() }
+        val ctx = LocalContext.current
+        PillButton("Copy logs", PillStyle.Ghost, Modifier.fillMaxWidth()) {
+            (ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
+                .setPrimaryClip(ClipData.newPlainText("tailscale logs", ts.logs()))
+        }
     }
 }
 
