@@ -36,6 +36,8 @@ class ConnectionRepository(
 
     override fun find(name: String): SavedConnection? = list().firstOrNull { it.name == name }
 
+    override fun save(connection: SavedConnection) = upsert(connection)
+
     fun upsert(connection: SavedConnection) {
         val current = list().toMutableList()
         val idx = current.indexOfFirst { it.name == connection.name }

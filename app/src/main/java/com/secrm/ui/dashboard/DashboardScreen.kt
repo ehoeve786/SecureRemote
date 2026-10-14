@@ -30,6 +30,7 @@ import com.secrm.core.ssh.SshConfig
 import com.secrm.core.ssh.SshState
 import com.secrm.core.ssh.tools.AuthMethod
 import com.secrm.core.ssh.tools.SavedConnection
+import com.secrm.core.ssh.tools.connectSaved
 import com.secrm.design.*
 import kotlinx.coroutines.launch
 
@@ -202,13 +203,8 @@ fun DashboardScreen(
                                         connecting = null
                                         return@launch
                                     }
-                                    val ok = app.ssh.connect(SshConfig(
-                                        host = conn.host,
-                                        port = conn.port,
-                                        username = conn.user,
-                                        auth = auth,
-                                        via = conn.via
-                                    ))
+                                    val ok = app.ssh.connectSaved(conn, auth, app.connections)
+                                    connections = app.connections.list() // host or key may have been updated
                                     connecting = null
                                     if (ok) {
                                         onOpenShell()
@@ -539,6 +535,7 @@ private fun ConnectionFormSheet(
                         password = if (authMethod == AuthMethod.PASSWORD) password else "",
                         keyId = if (authMethod != AuthMethod.PASSWORD) keyId else null,
                         via = via,
+                        hostKey = initial?.hostKey, // same device; also how it's found if its IP changes
                         allowMcpExec = canExec,
                         allowMcpRead = canRead
                     ))

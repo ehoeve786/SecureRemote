@@ -24,9 +24,12 @@ data class SshConfig(
     val connectTimeoutMs: Int = 10_000,
     /** Private network to route through ("tailscale" or "wireguard"), or null for direct. */
     val via: String? = null,
+    /** Trusted host key (base64), or null to trust whatever the server presents (first connect). */
+    val hostKey: String? = null,
 )
 
 private val log = ArrayDeque<String>()
+private const val ALIAS = "secrm-host"
 
 class SshClientManager {
     init {
@@ -47,6 +50,44 @@ class SshClientManager {
 
     private val _state = MutableStateFlow<SshState>(SshState.Disconnected)
     val state: StateFlow<SshState> = _state.asStateFlow()
+
+    /** Host key (base64) the last successful connect saw. */
+    @Volatile var hostKey: String? = null; private set
+
+    /**
+     * Finds a device whose DHCP address changed, after Tidegate's HostRediscovery: sweeps [port] on
+     * the phone's own private /24s (a hotspot gets a fresh random one each session) and the old
+     * address's /24, and returns the single address presenting [hostKey], or null.
+     */
+    suspend fun rediscover(oldHost: String, port: Int, hostKey: String): String? = withContext(Dispatchers.IO) {
+        val bases = (java.net.NetworkInterface.getNetworkInterfaces().asSequence()
+            .filter { runCatching { it.isUp && !it.isLoopback }.getOrDefault(false) }
+            .flatMap { it.inetAddresses.asSequence() }
+            .filterIsInstance<java.net.Inet4Address>().map { it.hostAddress.orEmpty() } + oldHost)
+            .filter(::isPrivateV4).map { it.substringBeforeLast('.') }.toSet()
+        coroutineScope {
+            bases.flatMap { b -> (1..254).map { "$b.$it" } }.filter { it != oldHost }
+                .map { ip -> async { ip.takeIf { probe(it, port) } } }.awaitAll().filterNotNull()
+                .map { ip -> async { ip.takeIf { keyScan(it, port) == hostKey } } }.awaitAll().filterNotNull()
+                .singleOrNull() // fail closed on ambiguity
+        }
+    }
+
+    private fun probe(host: String, port: Int) = runCatching {
+        java.net.Socket().use { it.connect(java.net.InetSocketAddress(host, port), 400) }
+    }.isSuccess
+
+    /** The server's host key; authentication is expected to fail, but the key exchange precedes it. */
+    private fun keyScan(host: String, port: Int): String? {
+        val s = JSch().getSession("probe", host, port).apply { setConfig("StrictHostKeyChecking", "no") }
+        runCatching { s.connect(3000) }
+        return s.hostKey?.key.also { s.disconnect() }
+    }
+
+    private fun isPrivateV4(h: String): Boolean {
+        val p = h.split('.').map { it.toIntOrNull() ?: return false }
+        return p.size == 4 && (p[0] == 10 || (p[0] == 192 && p[1] == 168) || (p[0] == 172 && p[1] in 16..31))
+    }
 
     private var shellIn: InputStream? = null
     private var shellOut: OutputStream? = null
@@ -76,9 +117,14 @@ class SshClientManager {
 
             val s = jsch.getSession(cfg.username, cfg.host, cfg.port)
             session = s
+            // A known key is checked before authenticating, so credentials never go to an impostor.
+            cfg.hostKey?.let {
+                s.setHostKeyAlias(ALIAS)
+                jsch.hostKeyRepository.add(HostKey(ALIAS, java.util.Base64.getDecoder().decode(it)), null)
+            }
             cfg.via?.let { s.setProxy(proxy(it)) }
             s.setConfig(java.util.Properties().apply {
-                put("StrictHostKeyChecking", "no")
+                put("StrictHostKeyChecking", if (cfg.hostKey != null) "yes" else "no")
                 put("PreferredAuthentications",
                     when (cfg.auth) {
                         is SshAuth.Password -> "password,keyboard-interactive"
@@ -88,6 +134,7 @@ class SshClientManager {
             if (cfg.auth is SshAuth.Password) s.setPassword((cfg.auth as SshAuth.Password).password)
 
             s.connect(if (cfg.via != null) maxOf(cfg.connectTimeoutMs, 30_000) else cfg.connectTimeoutMs)
+            hostKey = s.hostKey?.key
             _state.value = SshState.Connected(s.serverVersion ?: "unknown")
             true
         } catch (t: Throwable) {
