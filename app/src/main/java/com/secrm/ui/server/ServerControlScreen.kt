@@ -112,6 +112,15 @@ private fun TailscaleSection(app: SecureRemoteApp) {
             Switch(public, { public = it; ts.public = it })
         }
         if (public) ts.funnelProblem?.let { Text(it, style = SecrmType.Caption, color = Palette.Warning) }
+        (st as? Tunnel.State.Up)?.takeIf { public && ts.funnelProblem == null }?.let { up ->
+            val url = "https://${up.name}/mcp"
+            val ctx = LocalContext.current
+            Text(url, style = SecrmType.MonoSmall, color = Palette.TextPrimary)
+            PillButton("Copy MCP URL", PillStyle.Primary, Modifier.fillMaxWidth()) {
+                (ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
+                    .setPrimaryClip(ClipData.newPlainText("MCP URL", url))
+            }
+        }
         OnOff(st, ts::start, ts::stop)
         if (st !is Tunnel.State.Idle) PillButton("Sign out", PillStyle.Ghost, Modifier.fillMaxWidth()) { ts.logout() }
         val ctx = LocalContext.current
