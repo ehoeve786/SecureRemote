@@ -19,6 +19,13 @@ class TerminalBridge(private val ssh: SshClientManager) {
     private val writer = Executors.newSingleThreadExecutor()
     @Volatile private var out: OutputStream? = null
 
+    // Raw session output (last ~256 KB), for copying long output without drag-selecting.
+    private val log = java.io.ByteArrayOutputStream()
+
+    /** The session's output as plain text: escape sequences and carriage returns removed. */
+    fun transcript(): String = synchronized(log) { log.toString(Charsets.UTF_8.name()) }
+        .replace(Regex("\u001B(\\[[0-?]*[ -/]*[@-~]|\\][^\u0007\u001B]*(\u0007|\u001B\\\\)?|[@-Z\\\\-_])|\r"), "")
+
     val emulator = TerminalEmulatorFactory.create(
         initialRows = 40,
         initialCols = 120,
@@ -38,6 +45,10 @@ class TerminalBridge(private val ssh: SshClientManager) {
                     val n = input.read(buf)
                     if (n < 0) break
                     emulator.writeInput(buf, 0, n)
+                    synchronized(log) {
+                        if (log.size() > 256 * 1024) log.toByteArray().let { log.reset(); log.write(it, it.size / 2, it.size - it.size / 2) }
+                        log.write(buf, 0, n)
+                    }
                 }
             }.exceptionOrNull()
             // Say so instead of leaving a dead terminal that silently ignores typing.

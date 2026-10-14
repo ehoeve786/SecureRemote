@@ -31,7 +31,13 @@ fun TerminalScreen(app: SecureRemoteApp, onBack: () -> Unit) {
                 Icon(Icons.AutoMirrored.Rounded.KeyboardArrowLeft, "Back", tint = Palette.TextTertiary)
             }
             Spacer(Modifier.weight(1f))
-            Text("SSH", style = SecrmType.MonoSmall, color = Palette.TextTertiary)
+            val ctx = androidx.compose.ui.platform.LocalContext.current
+            Box(Modifier.clickableNoRipple {
+                (ctx.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager)
+                    .setPrimaryClip(android.content.ClipData.newPlainText("terminal output", bridge.transcript()))
+            }.padding(Space.sm)) {
+                Text("Copy output", style = SecrmType.MonoSmall, color = Palette.Indigo)
+            }
         }
         Box(Modifier.weight(1f)) {
             TerminalSurface(bridge = bridge, onReady = { ready = it }, modifier = Modifier.fillMaxSize())
