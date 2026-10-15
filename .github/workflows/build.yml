@@ -36,6 +36,7 @@ jobs:
       - if: failure()
         run: |
           grep -E '^e: |FAILED|tests completed|What went wrong' -A4 test.log | head -80 | sed 's/^/::error::/'
+          grep -h 'SSHDBG' test.log | cut -c1-1800 | sed 's/^/::error::/' | head -20
           find . -path '*/build/test-results/*' -name '*.xml' -exec grep -h -A8 '<failure' {} + | head -150 | sed 's/^/::error::/'
       - name: Signing key
         env: { KS: "${{ secrets.SIGNING_KEYSTORE }}" }

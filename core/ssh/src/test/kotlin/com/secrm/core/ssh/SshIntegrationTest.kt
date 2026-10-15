@@ -52,6 +52,7 @@ class SshIntegrationTest {
         fun expect(marker: String) {
             val deadline = System.currentTimeMillis() + 10_000
             while (System.currentTimeMillis() < deadline && !synchronized(out) { out.contains(marker) }) Thread.sleep(50)
+            println("SSHDBG shell=${text().replace("\n", " | ").take(800)}")
             assertTrue("no \"$marker\" in shell output: ${text().replace("\n", " | ").take(1000)}", synchronized(out) { out.contains(marker) })
         }
 
@@ -89,6 +90,7 @@ class SshIntegrationTest {
     /** Connects or fails with the client's own state and JSch's log, so the cause shows in the report. */
     private suspend fun connectOrFail() {
         val ok = ssh.connect(config())
+        println("SSHDBG connect=$ok state=${ssh.state.value} log=${ssh.recentLog().replace("\n", " | ").take(1500)}")
         assertTrue("connect failed: ${ssh.state.value} :: ${ssh.recentLog().replace("\n", " | ").take(1500)}", ok)
     }
 
