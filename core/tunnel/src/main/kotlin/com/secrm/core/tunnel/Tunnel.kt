@@ -57,8 +57,8 @@ abstract class Tunnel(context: Context, private val scope: CoroutineScope, key: 
             try {
                 startNative()
             } catch (e: Throwable) {
-                // Errors too: a missing native library is an UnsatisfiedLinkError.
-                mutableState.value = State.Failed(e.message ?: e.toString(), e.stackTraceToString())
+                // Errors too: a missing native library is an UnsatisfiedLinkError. Skipped after stop(), which cancels this.
+                if (isActive) mutableState.value = State.Failed(e.message ?: e.toString(), e.stackTraceToString())
                 return@launch
             }
             // Polls fast after a change and backs off while nothing changes, so an idle or waiting tunnel

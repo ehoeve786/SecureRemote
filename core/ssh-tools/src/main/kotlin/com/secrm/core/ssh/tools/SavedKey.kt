@@ -9,8 +9,8 @@ data class SavedKey(
     val algorithm: String = "ssh-ed25519",
     val publicKey: String = "",
     val passphrase: String = "",
-    // Private key is stored separately in EncryptedConfigStore under
-    // "ssh.key.<id>.pem" so the list view never deserializes secrets.
+    // The private key is stored separately under "ssh.key.<id>.pem". This whole record, passphrase
+    // included, sits in the encrypted key list, which KeyRepository.list() decodes on every call.
 )
 
 /** AGENT = SSH key item from the Bitwarden vault (keyId holds the item id). */

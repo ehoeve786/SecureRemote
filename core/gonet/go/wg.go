@@ -45,9 +45,10 @@ func (t *Tunnel) Start(config string) error {
 		t.setError(err.Error())
 		return err
 	}
-	t.Stop()
+	// One lock for the whole replace, so two Starts cannot each open a device and orphan one.
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	t.stopLocked()
 	t.lastError = ""
 
 	addrs := make([]netip.Addr, 0, len(cfg.Addresses))
@@ -94,6 +95,11 @@ func (t *Tunnel) Dial(host string, port, timeoutMs int) (*Conn, error) {
 func (t *Tunnel) Stop() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	t.stopLocked()
+}
+
+// stopLocked takes the device down. The caller holds t.mu.
+func (t *Tunnel) stopLocked() {
 	if t.dev != nil {
 		t.dev.Close()
 	}
