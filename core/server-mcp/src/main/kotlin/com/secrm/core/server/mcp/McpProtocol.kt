@@ -106,7 +106,9 @@ object McpProtocol {
         val name = (params?.get("name") as? JsonPrimitive)?.contentOrNull
             ?: return errorResponse(id, -32602, "Missing tool name")
         val args = params["arguments"] as? JsonObject ?: buildJsonObject {}
-        val result = dispatcher.dispatch(session, name, args)
+        // A throw here would reach the HTTP layer as plain text, not a JSON-RPC error with this id.
+        val result = runCatching { dispatcher.dispatch(session, name, args) }
+            .getOrElse { return errorResponse(id, -32603, "Internal error") }
         return ok(id, toolResultToJson(result))
     }
 

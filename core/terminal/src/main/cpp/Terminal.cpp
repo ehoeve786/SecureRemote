@@ -1062,6 +1062,7 @@ JNIEXPORT jint JNICALL
 Java_org_connectbot_terminal_TerminalNative_nativeWriteInputBuffer(JNIEnv* env, jobject /* thiz */,
                                                                    jlong ptr, jobject buffer, jint length) {
     auto* term = reinterpret_cast<Terminal*>(ptr);
+    if (!term || !buffer) return 0;
     const jlong capacity = env->GetDirectBufferCapacity(buffer);
     if (length < 0 || capacity < 0 || length > capacity) {
         argumentError(env, "Invalid direct buffer range");
@@ -1079,6 +1080,7 @@ JNIEXPORT jint JNICALL
 Java_org_connectbot_terminal_TerminalNative_nativeWriteInputArray(JNIEnv* env, jobject /* thiz */,
                                                                   jlong ptr, jbyteArray data, jint offset, jint length) {
     auto* term = reinterpret_cast<Terminal*>(ptr);
+    if (!term || !data) return 0;
     const jsize size = env->GetArrayLength(data);
     if (offset < 0 || offset > size || length < 0 || length > size - offset) {
         argumentError(env, "Invalid input slice");
