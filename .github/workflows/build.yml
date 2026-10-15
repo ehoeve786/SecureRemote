@@ -32,7 +32,7 @@ jobs:
       # JVM unit tests: OAuth/MCP auth and protocol, the HTTP server end to end, and SSH/SFTP against an
       # in-process server. Instrumented tests (EncryptedConfigStore on a device) are not run here.
       - name: Unit tests
-        run: set -o pipefail; gradle testDebugUnitTest --no-daemon 2>&1 | tee test.log
+        run: set -o pipefail; gradle testDebugUnitTest --no-daemon --continue 2>&1 | tee test.log
       - if: failure()
         run: |
           grep -E 'FAILED|tests completed|What went wrong' -A4 test.log | head -80 | sed 's/^/::error::/'

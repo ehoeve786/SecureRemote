@@ -48,17 +48,17 @@ class CallDispatcher(private val audit: AuditSink = AuditSink.Noop) {
     fun specs(): List<ToolSpec> = handlers.values.map { it.first }
 
     suspend fun dispatch(session: Session, name: String, args: JsonObject): ToolResult {
-        val (_, handler) = handlers[name]
-            ?: return ToolResult.error("unknown_tool", "Call tools/list first.", "Unknown tool: $name")
-        return try {
-            val result = handler.call(session, args)
-            audit.record(session, name, args, result)
-            result
+        val handler = handlers[name]?.second
+        val result = if (handler == null) {
+            ToolResult.error("unknown_tool", "Call tools/list first.", "Unknown tool: $name")
+        } else try {
+            handler.call(session, args)
         } catch (t: Throwable) {
-            val r = ToolResult.error("internal_error", "Retry or check server logs.", t.message ?: "Tool failed")
-            audit.record(session, name, args, r)
-            r
+            ToolResult.error("internal_error", "Retry or check server logs.", t.message ?: "Tool failed")
         }
+        // Unknown names are audited too: probing for tools is worth seeing.
+        audit.record(session, name, args, result)
+        return result
     }
 
     interface AuditSink {
