@@ -40,7 +40,7 @@ class TerminalThroughputTest {
         val bytes = (0 until 100).joinToString("") { "row%04d\r\n".format(it) }.toByteArray(Charsets.US_ASCII)
         t.writeInput(bytes, 0, bytes.size)
         t.processPendingUpdates()
-        val rows = t.snapshot.value.lines.map { it.cells.text().trimEnd() }
+        val rows = t.snapshot.value.lines.map { it.text.trimEnd() }
         // 100 lines in 24 rows: rows 77..99 stay on screen, and the cursor row below them is empty.
         assertEquals((77..99).map { "row%04d".format(it) } + "", rows)
     }
