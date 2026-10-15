@@ -139,6 +139,13 @@ class SshClientManager {
             cfg.via?.let { s.setProxy(proxy(it)) }
             s.setConfig(java.util.Properties().apply {
                 put("StrictHostKeyChecking", if (cfg.hostKey != null) "yes" else "no")
+                // Plain CTR + HMAC-SHA2: the AEAD/ETM defaults (chacha20, GCM) corrupt packets on Android
+                // once several channels share the session (servers log "message authentication code
+                // incorrect" and hang up), which is what killed the session when SFTP opened.
+                put("cipher.c2s", "aes128-ctr,aes192-ctr,aes256-ctr")
+                put("cipher.s2c", "aes128-ctr,aes192-ctr,aes256-ctr")
+                put("mac.c2s", "hmac-sha2-256,hmac-sha2-512")
+                put("mac.s2c", "hmac-sha2-256,hmac-sha2-512")
                 put("PreferredAuthentications",
                     when (cfg.auth) {
                         is SshAuth.Password -> "password,keyboard-interactive"
