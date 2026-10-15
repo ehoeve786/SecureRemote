@@ -76,7 +76,7 @@ class SshIntegrationTest {
             passwordAuthenticator = PasswordAuthenticator { u, p, _ -> u == user && p == password }
             fileSystemFactory = VirtualFileSystemFactory(root)
             subsystemFactories = listOf(SftpSubsystemFactory())
-            shellFactory = ProcessShellFactory("/bin/cat")
+            shellFactory = ProcessShellFactory("/bin/cat", "-")
         }
         server.start()
         ssh = SshClientManager()
