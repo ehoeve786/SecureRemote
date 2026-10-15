@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- The benchmarks keep several emulators, each with a full scrollback, in one process. -->
+    <application android:largeHeap="true" />
+</manifest>
