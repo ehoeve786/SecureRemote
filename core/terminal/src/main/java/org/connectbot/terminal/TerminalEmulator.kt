@@ -16,6 +16,9 @@
  */
 package org.connectbot.terminal
 
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
+
 import android.icu.lang.UCharacter
 import android.icu.lang.UProperty
 import android.os.Handler
@@ -324,7 +327,7 @@ internal class TerminalEmulatorImpl(
     private val snapshots = TerminalDispatcher()
     private var outputBatch: ByteArrayOutputStream? = null
 
-    internal fun batchOutput(action: () -> Unit) = synchronized(damageLock) {
+    internal fun batchOutput(action: () -> Unit) = damageLocked {
         check(outputBatch == null)
         val batch = ByteArrayOutputStream(4096)
         outputBatch = batch
@@ -358,7 +361,7 @@ internal class TerminalEmulatorImpl(
 
     override val inlineImages: InlineImages get() = imagePolicy
 
-    override fun setInlineImages(inlineImages: InlineImages): Unit = synchronized(damageLock) {
+    override fun setInlineImages(inlineImages: InlineImages): Unit = damageLocked {
         val oldLimits = imageStore.limits
         imageProtocol.consentGate?.reset()
         imageProtocol.reset()
@@ -381,7 +384,7 @@ internal class TerminalEmulatorImpl(
                         override val context = EmptyCoroutineContext
                         override fun resumeWith(result: Result<Boolean>) {
                             commands.execute {
-                                synchronized(damageLock) {
+                                damageLocked {
                                     synchronized(imageStore) { completion(result.getOrDefault(false)) }
                                     propertyChanged = true
                                     requestProcessPendingUpdatesLocked()
@@ -394,14 +397,14 @@ internal class TerminalEmulatorImpl(
         }
     }
 
-    override fun setCellPixelSize(width: Int, height: Int): Unit = synchronized(damageLock) {
+    override fun setCellPixelSize(width: Int, height: Int): Unit = damageLocked {
         require(width > 0 && height > 0)
         imageStore.updateCellSize(width, height)
         propertyChanged = true
         requestProcessPendingUpdatesLocked()
     }
 
-    override fun onImageFragment(kitty: Boolean, data: ByteArray, initial: Boolean, final: Boolean, row: Int, col: Int): Long = synchronized(damageLock) {
+    override fun onImageFragment(kitty: Boolean, data: ByteArray, initial: Boolean, final: Boolean, row: Int, col: Int): Long = damageLocked {
         val result = synchronized(imageStore) {
             imageProtocol.accept(kitty, data, initial, final, row, col)
         }
@@ -411,7 +414,7 @@ internal class TerminalEmulatorImpl(
     }
 
     override fun onImageEdit(kind: Int, top: Int, bottom: Int, left: Int, right: Int, downward: Int, rightward: Int) {
-        synchronized(damageLock) {
+        damageLocked {
             when (kind) {
                 0 -> imageStore.edit(TermRect(top, bottom, left, right))
                 1 -> imageStore.scroll(TermRect(top, bottom, left, right), downward, rightward)
@@ -439,7 +442,8 @@ internal class TerminalEmulatorImpl(
     // Session lock: emulator operations -> native lifetime lock -> native mutex.
     // Synchronous JNI callbacks may reenter this monitor, never native methods.
     // MUST be initialized before terminalNative.
-    private val damageLock = Any()
+    private val damageLock = ReentrantLock(true) // fair: writers, snapshots and key input take turns
+    private inline fun <T> damageLocked(block: () -> T): T = damageLock.withLock { block() }
     private val pendingDamageRegions = mutableListOf<DamageRegion>()
     private var damagePosted = false
     private var nextSnapshotNanos = System.nanoTime()
@@ -521,14 +525,14 @@ internal class TerminalEmulatorImpl(
     /**
      * Write data to the terminal (from PTY/transport).
      */
-    override fun writeInput(data: ByteArray, offset: Int, length: Int): Unit = synchronized(damageLock) {
+    override fun writeInput(data: ByteArray, offset: Int, length: Int): Unit = damageLocked {
         terminalNative.writeInput(data, offset, length)
     }
 
     /**
      * Write data to the terminal using ByteBuffer (more efficient for large data).
      */
-    override fun writeInput(buffer: ByteBuffer, length: Int): Unit = synchronized(damageLock) {
+    override fun writeInput(buffer: ByteBuffer, length: Int): Unit = damageLocked {
         terminalNative.writeInput(buffer, length)
     }
 
@@ -545,14 +549,14 @@ internal class TerminalEmulatorImpl(
     }
 
     /** Resize using the physical viewport measured by the Compose terminal. */
-    internal fun resize(newRows: Int, newCols: Int, widthPixels: Int, heightPixels: Int): Unit = synchronized(damageLock) {
+    internal fun resize(newRows: Int, newCols: Int, widthPixels: Int, heightPixels: Int): Unit = damageLocked {
         require(newRows > 0 && newCols > 0) { "Terminal dimensions must be positive" }
         require(widthPixels > 0 && heightPixels > 0) { "Terminal pixel dimensions must be positive" }
         imageStore.rows = newRows
         imageStore.cols = newCols
         val resized = TerminalDimensions(newRows, newCols, widthPixels, heightPixels)
         val charactersChanged = newRows != rows || newCols != cols
-        if (!charactersChanged && resized == publishedDimensions) return@synchronized
+        if (!charactersChanged && resized == publishedDimensions) return@damageLocked
 
         if (charactersChanged) {
             terminalNative.resize(newRows, newCols)
@@ -580,7 +584,7 @@ internal class TerminalEmulatorImpl(
      * Dispatch a key event to the terminal.
      */
     override fun dispatchKey(modifiers: Int, key: Int): Unit = commands.call {
-        synchronized(damageLock) { terminalNative.dispatchKey(modifiers, key) }
+        damageLocked { terminalNative.dispatchKey(modifiers, key) }
         Unit
     }
 
@@ -588,7 +592,7 @@ internal class TerminalEmulatorImpl(
      * Dispatch a character to the terminal.
      */
     override fun dispatchCharacter(modifiers: Int, codepoint: Int): Unit = commands.call {
-        synchronized(damageLock) { terminalNative.dispatchCharacter(modifiers, codepoint) }
+        damageLocked { terminalNative.dispatchCharacter(modifiers, codepoint) }
         Unit
     }
 
@@ -629,7 +633,7 @@ internal class TerminalEmulatorImpl(
      * @param ansiColors IntArray of ARGB colors (size 16 for all ANSI colors)
      * @return Number of colors set, or -1 on error
      */
-    override fun setAnsiPalette(ansiColors: IntArray): Int = synchronized(damageLock) {
+    override fun setAnsiPalette(ansiColors: IntArray): Int = damageLocked {
         require(ansiColors.size >= 16) {
             "ANSI palette must contain 16 colors"
         }
@@ -649,8 +653,8 @@ internal class TerminalEmulatorImpl(
      * @param background ARGB background color
      * @return 0 on success, -1 on error
      */
-    override fun setDefaultColors(foreground: Int, background: Int): Int = synchronized(damageLock) {
-        synchronized(damageLock) {
+    override fun setDefaultColors(foreground: Int, background: Int): Int = damageLocked {
+        damageLocked {
             currentDefaultForeground = Color(foreground)
             currentDefaultBackground = Color(background)
         }
@@ -687,7 +691,7 @@ internal class TerminalEmulatorImpl(
     // ================================================================================
 
     override fun damage(startRow: Int, endRow: Int, startCol: Int, endCol: Int): Int {
-        synchronized(damageLock) {
+        damageLocked {
             addDamageRegion(startRow, endRow, startCol, endCol)
             requestProcessPendingUpdatesLocked()
         }
@@ -699,7 +703,7 @@ internal class TerminalEmulatorImpl(
         // and the cached cells move with the native screen. libvterm invokes
         // sb_pushline before moverect, so the scrollback callback cannot infer
         // this region without using stale information from the previous scroll.
-        synchronized(damageLock) {
+        damageLocked {
             if (
                 dest.startCol == 0 && src.startCol == 0 &&
                 dest.endCol == cols && src.endCol == cols &&
@@ -736,7 +740,7 @@ internal class TerminalEmulatorImpl(
     override fun moveCursor(pos: CursorPosition, oldPos: CursorPosition, visible: Boolean): Int = moveCursor(pos.row, pos.col, oldPos.row, oldPos.col, visible)
 
     override fun moveCursor(row: Int, col: Int, oldRow: Int, oldCol: Int, visible: Boolean): Int {
-        synchronized(damageLock) {
+        damageLocked {
             cursorRow = row
             cursorCol = col
             cursorVisible = visible
@@ -747,7 +751,7 @@ internal class TerminalEmulatorImpl(
     }
 
     override fun setTermProp(prop: Int, value: TerminalProperty): Int {
-        synchronized(damageLock) {
+        damageLocked {
             when (value) {
                 is TerminalProperty.StringValue -> {
                     // Property 4 is VTERM_PROP_TITLE.
@@ -831,7 +835,7 @@ internal class TerminalEmulatorImpl(
         val cellList = builder.build()
         pendingScrollback = null
 
-        synchronized(damageLock) {
+        damageLocked {
             // FIRST: Preserve semantic segments from line 0 (the line being scrolled out)
             // This must happen BEFORE we shift segments, since moverect was already called
             val line0Segments = if (currentLines.isNotEmpty()) {
@@ -855,7 +859,7 @@ internal class TerminalEmulatorImpl(
     }
 
     override fun clearScrollback(): Int {
-        synchronized(damageLock) {
+        damageLocked {
             imageStore.trimHistory(0)
             scrollback.clear()
             scrollbackDirty = true
@@ -866,7 +870,7 @@ internal class TerminalEmulatorImpl(
     }
 
     override fun popScrollbackLine(cols: Int, start: Int, count: Int, cells: ByteBuffer): Int {
-        synchronized(damageLock) {
+        damageLocked {
             if (scrollback.isEmpty()) return 0
 
             val line = scrollback.last()
@@ -925,11 +929,11 @@ internal class TerminalEmulatorImpl(
 
     private fun onOscSequence(command: Int, payload: String, cursorRow: Int, cursorCol: Int): Int {
         // Use the native cursor position from libvterm for OSC sequence processing
-        val actions = synchronized(damageLock) {
+        val actions = damageLocked {
             oscParser.parse(command, payload, cursorRow, cursorCol, cols)
         }
 
-        synchronized(damageLock) {
+        damageLocked {
             for (action in actions) {
                 when (action) {
                     is OscParser.Action.AddSegment -> {
@@ -980,7 +984,7 @@ internal class TerminalEmulatorImpl(
         metadata: String?,
         promptId: Int,
     ) {
-        synchronized(damageLock) {
+        damageLocked {
             // Apply immediately to currentLines so segments are shifted correctly during scroll
             if (row < 0 || row >= currentLines.size) {
                 return
@@ -1025,12 +1029,12 @@ internal class TerminalEmulatorImpl(
      * This runs on the snapshot dispatcher, NOT in the JNI callback or on the UI thread.
      */
     @VisibleForTesting
-    fun processPendingUpdates(): Unit = synchronized(damageLock) {
+    fun processPendingUpdates(): Unit = damageLocked {
         // Collect pending changes
         val damageRegions: List<DamageRegion>
         val needsUpdate: Boolean
         val movedRows: Set<Int>
-        synchronized(damageLock) {
+        damageLocked {
             damageRegions = pendingDamageRegions.toList()
             pendingDamageRegions.clear()
             movedRows = movedSegmentRows.toSet()
@@ -1040,7 +1044,7 @@ internal class TerminalEmulatorImpl(
             propertyChanged = false
         }
 
-        if (!needsUpdate) return@synchronized
+        if (!needsUpdate) return@damageLocked
 
         // One range per row and one immutable replacement per changed row.
         for (row in 0 until rows) {
@@ -1082,7 +1086,7 @@ internal class TerminalEmulatorImpl(
 
         // Apply pending semantic segments now that text content is available
         val segmentsToApply: List<PendingSemanticSegment>
-        synchronized(damageLock) {
+        damageLocked {
             segmentsToApply = pendingSemanticSegments.toList()
             pendingSemanticSegments.clear()
         }
@@ -1100,19 +1104,19 @@ internal class TerminalEmulatorImpl(
      * Apply a semantic segment to a line.
      * This is called during processPendingUpdates when the actual text is available.
      */
-    private fun applySemanticSegment(segment: PendingSemanticSegment) = synchronized(damageLock) {
+    private fun applySemanticSegment(segment: PendingSemanticSegment) = damageLocked {
         val row = segment.row
 
         // Ensure row is valid
         if (row < 0 || row >= currentLines.size) {
-            return@synchronized
+            return@damageLocked
         }
 
         val line = currentLines[row]
         if (segment.semanticType == SemanticType.HYPERLINK) {
-            if (!isValidCellRange(segment.startCol, segment.endCol, line.cells.size)) return@synchronized
+            if (!isValidCellRange(segment.startCol, segment.endCol, line.cells.size)) return@damageLocked
             val linkedText = cellText(line.cells, segment.startCol, segment.endCol)
-            if (linkedText.all { it == '\u0000' || it.isWhitespace() }) return@synchronized
+            if (linkedText.all { it == '\u0000' || it.isWhitespace() }) return@damageLocked
         }
 
         // Create new segment
@@ -1126,7 +1130,7 @@ internal class TerminalEmulatorImpl(
 
         if (newSegment in line.semanticSegments) {
             storeSegmentText(row, newSegment, line)
-            return@synchronized
+            return@damageLocked
         }
 
         // Add to existing segments (sorted by startCol)
@@ -1147,7 +1151,7 @@ internal class TerminalEmulatorImpl(
         // links from surviving line redraws while allowing display-only
         // invalidations, such as palette changes, to keep semantic metadata.
         // Must synchronize to ensure visibility of segments added by addSemanticSegment
-        synchronized(damageLock) {
+        damageLocked {
             run {
                 val previousLine = currentLines[row]
                 val existingSegments = previousLine.semanticSegments
@@ -1178,13 +1182,13 @@ internal class TerminalEmulatorImpl(
     /**
      * Build a complete snapshot of terminal state.
      */
-    private fun buildSnapshot(): TerminalSnapshot = synchronized(damageLock) {
+    private fun buildSnapshot(): TerminalSnapshot = damageLocked {
         // Read all mutable state under damageLock to ensure cross-thread visibility.
         // addSemanticSegment writes currentLines on the JNI callback thread; without
         // the lock here, the snapshot-building thread might see a stale reference.
         val lines: List<TerminalLine>
         val scrollbackCopy: List<TerminalLine>
-        synchronized(damageLock) {
+        damageLocked {
             if (scrollbackDirty) {
                 scrollbackSnapshot = scrollback.toList()
                 scrollbackDirty = false
@@ -1398,7 +1402,7 @@ internal class TerminalEmulatorImpl(
      * Used when global display properties change (colors, etc.).
      */
     private fun invalidateDisplay() {
-        synchronized(damageLock) {
+        damageLocked {
             pendingDamageRegions.clear()
             pendingDamageRegions.add(DamageRegion(0, rows, 0, cols, preserveSegments = true))
             requestProcessPendingUpdatesLocked()
@@ -1425,7 +1429,7 @@ internal class TerminalEmulatorImpl(
         }
     }
 
-    private fun processScheduledUpdates(): Unit = synchronized(damageLock) {
+    private fun processScheduledUpdates(): Unit = damageLocked {
         damagePosted = false
         // Limit sustained work to roughly one snapshot per refresh interval,
         // without adding a full interval to every newly arriving input burst.
@@ -1503,16 +1507,16 @@ internal class TerminalEmulatorImpl(
     }
 
     private fun storeSegmentText(row: Int, segment: SemanticSegment, line: TerminalLine) {
-        synchronized(damageLock) {
-            if (!isValidCellRange(segment.startCol, segment.endCol, line.cells.size)) return@synchronized
+        damageLocked {
+            if (!isValidCellRange(segment.startCol, segment.endCol, line.cells.size)) return@damageLocked
             semanticSegmentTexts[SemanticSegmentKey(row, segment)] = cellText(line.cells, segment.startCol, segment.endCol)
         }
     }
 
     private fun segmentTextStillMatches(row: Int, segment: SemanticSegment, cells: PackedCells): Boolean {
-        return synchronized(damageLock) {
-            val expected = semanticSegmentTexts[SemanticSegmentKey(row, segment)] ?: return@synchronized true
-            if (!isValidCellRange(segment.startCol, segment.endCol, cells.size)) return@synchronized false
+        return damageLocked {
+            val expected = semanticSegmentTexts[SemanticSegmentKey(row, segment)] ?: return@damageLocked true
+            if (!isValidCellRange(segment.startCol, segment.endCol, cells.size)) return@damageLocked false
             val actual = cellText(cells, segment.startCol, segment.endCol)
             actual == expected
         }
@@ -1523,7 +1527,7 @@ internal class TerminalEmulatorImpl(
     private fun cellText(cells: PackedCells, startCol: Int, endCol: Int): String = cells.text(startCol, endCol)
 
     private fun replaceStoredSegmentTexts(row: Int, segments: List<SemanticSegment>) {
-        synchronized(damageLock) {
+        damageLocked {
             if (semanticSegmentTexts.isEmpty()) return
             val keep = segments.mapTo(mutableSetOf()) { SemanticSegmentKey(row, it) }
             semanticSegmentTexts.keys.removeAll { it.row == row && it !in keep }
@@ -1531,7 +1535,7 @@ internal class TerminalEmulatorImpl(
     }
 
     private fun removeStoredSegmentTexts(row: Int) {
-        synchronized(damageLock) {
+        damageLocked {
             semanticSegmentTexts.keys.removeAll { it.row == row }
         }
     }
