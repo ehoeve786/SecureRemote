@@ -96,7 +96,7 @@ class SshIntegrationTest {
 
     private suspend fun shellOrFail() {
         val ok = ssh.ensureShell()
-        println("SSHDBG shell=$ok alive=${ssh.activeSession() != null} log=${ssh.recentLog().lines().takeLast(4).joinToString(" | ")}")
+        println("SSHDBG shell=$ok alive=${ssh.activeSession() != null} log=${ssh.recentLog().lines().filter { it.startsWith("Caught") || it.contains("Exception") || it.contains("Disconnect") || it.contains("closed") }.takeLast(4).joinToString(" | ").take(600)}")
         assertTrue("shell did not open", ok)
     }
 
