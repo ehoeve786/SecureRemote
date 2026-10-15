@@ -22,6 +22,4 @@ dependencies {
     testImplementation("org.apache.sshd:sshd-core:2.12.1")
     testImplementation("org.apache.sshd:sshd-sftp:2.12.1")
 }
-tasks.withType<Test>().configureEach { testLogging { showStandardStreams = true } }
-
 kotlin { compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) } }

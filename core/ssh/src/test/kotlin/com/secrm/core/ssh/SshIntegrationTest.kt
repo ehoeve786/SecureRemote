@@ -85,7 +85,6 @@ class SshIntegrationTest {
         fun expect(marker: String) {
             val deadline = System.currentTimeMillis() + 10_000
             while (System.currentTimeMillis() < deadline && !synchronized(out) { out.contains(marker) }) Thread.sleep(50)
-            println("SSHDBG shell=${text().replace("\n", " | ").take(800)}")
             assertTrue("no \"$marker\" in shell output: ${text().replace("\n", " | ").take(1000)}", synchronized(out) { out.contains(marker) })
         }
 
@@ -123,13 +122,11 @@ class SshIntegrationTest {
     /** Connects or fails with the client's own state and JSch's log, so the cause shows in the report. */
     private suspend fun connectOrFail() {
         val ok = ssh.connect(config())
-        println("SSHDBG connect=$ok state=${ssh.state.value} log=${ssh.recentLog().replace("\n", " | ").take(1500)}")
         assertTrue("connect failed: ${ssh.state.value} :: ${ssh.recentLog().replace("\n", " | ").take(1500)}", ok)
     }
 
     private suspend fun shellOrFail() {
         val ok = ssh.ensureShell()
-        println("SSHDBG shell=$ok alive=${ssh.activeSession() != null} log=${ssh.recentLog().lines().filter { it.startsWith("Caught") || it.contains("Exception") || it.contains("Disconnect") || it.contains("closed") }.takeLast(4).joinToString(" | ").take(600)}")
         assertTrue("shell did not open", ok)
     }
 
@@ -151,7 +148,6 @@ class SshIntegrationTest {
         val typed = ssh.shellOutputStream()!!
         val sftp = SftpClient(ssh)
         try {
-            println("SSHDBG before-sftp alive=${ssh.activeSession() != null} log=${ssh.recentLog().lines().takeLast(4).joinToString(" | ")}")
             val home = sftp.home()
             assertTrue(sftp.list(home).any { it.name == "hello.txt" })
             val file = SftpClient.join(home, "hello.txt")
