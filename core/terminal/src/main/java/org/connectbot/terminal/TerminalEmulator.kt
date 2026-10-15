@@ -1025,7 +1025,7 @@ internal class TerminalEmulatorImpl(
      * This runs on the snapshot dispatcher, NOT in the JNI callback or on the UI thread.
      */
     @VisibleForTesting
-    fun processPendingUpdates() {
+    fun processPendingUpdates(): Unit = synchronized(damageLock) {
         // Collect pending changes
         val damageRegions: List<DamageRegion>
         val needsUpdate: Boolean
@@ -1040,56 +1040,43 @@ internal class TerminalEmulatorImpl(
             propertyChanged = false
         }
 
-        if (!needsUpdate) return
+        if (!needsUpdate) return@synchronized
 
-        synchronized(damageLock) {
-            // One range per row and one immutable replacement per changed row.
-            for (row in 0 until rows) {
-                transferRanges[row * 2] = cols
-                transferRanges[row * 2 + 1] = 0
-            }
-            for (region in damageRegions) {
-                for (row in region.startRow.coerceIn(0, rows) until region.endRow.coerceIn(0, rows)) {
-                    val previous = currentLines[row].cells
-                    var start = (region.startCol - 1).coerceIn(0, cols)
-                    var end = (region.endCol + 1).coerceIn(start, cols)
-                    if (previous.size != cols) {
-                        start = 0
-                        end = cols
-                    } else {
-                        if (start > 0 && start < cols && previous.width(start) == 0) start--
-                        if (end < cols && previous.width(end) == 0) end++
-                    }
-                    transferRanges[row * 2] = minOf(transferRanges[row * 2], start)
-                    transferRanges[row * 2 + 1] = maxOf(transferRanges[row * 2 + 1], end)
+        // One range per row and one immutable replacement per changed row.
+        for (row in 0 until rows) {
+            transferRanges[row * 2] = cols
+            transferRanges[row * 2 + 1] = 0
+        }
+        for (region in damageRegions) {
+            for (row in region.startRow.coerceIn(0, rows) until region.endRow.coerceIn(0, rows)) {
+                val previous = currentLines[row].cells
+                var start = (region.startCol - 1).coerceIn(0, cols)
+                var end = (region.endCol + 1).coerceIn(start, cols)
+                if (previous.size != cols) {
+                    start = 0
+                    end = cols
+                } else {
+                    if (start > 0 && start < cols && previous.width(start) == 0) start--
+                    if (end < cols && previous.width(end) == 0) end++
                 }
+                transferRanges[row * 2] = minOf(transferRanges[row * 2], start)
+                transferRanges[row * 2 + 1] = maxOf(transferRanges[row * 2 + 1], end)
             }
         }
-
-        // Fetch in chunks of rows, releasing damageLock between them so PTY input and key events can
-        // run during a large redraw. Rows outside the chunk are left empty; new output re-queues damage.
-        for (chunkStart in 0 until rows step ROWS_PER_LOCK) {
-            val chunkEnd = minOf(rows, chunkStart + ROWS_PER_LOCK)
-            val chunkRanges = IntArray(rows * 2) { i ->
-                if (i / 2 in chunkStart until chunkEnd) transferRanges[i] else if (i % 2 == 0) cols else 0
+        var builder: PackedCells.Builder? = null
+        screenTransfer.fetch(terminalNative, transferRanges) { row, start, count, buffer, offset, softWrapped ->
+            val previous = currentLines[row].cells
+            if (builder == null && (previous.size != cols || !previous.matches(buffer, offset, start, count))) {
+                builder = PackedCells.Builder(cols).apply { copy(previous, 0, start) }
             }
-            synchronized(damageLock) {
-                var builder: PackedCells.Builder? = null
-                screenTransfer.fetch(terminalNative, chunkRanges) { row, start, count, buffer, offset, softWrapped ->
-                    val previous = currentLines[row].cells
-                    if (builder == null && (previous.size != cols || !previous.matches(buffer, offset, start, count))) {
-                        builder = PackedCells.Builder(cols).apply { copy(previous, 0, start) }
-                    }
-                    builder?.read(buffer, offset, count)
-                    if (start + count == transferRanges[row * 2 + 1]) {
-                        val cells = builder?.let {
-                            if (start + count < cols) it.copy(previous, start + count, cols)
-                            it.build()
-                        } ?: previous
-                        updateLine(row, cells, softWrapped, damageRegions, row in movedRows)
-                        builder = null
-                    }
-                }
+            builder?.read(buffer, offset, count)
+            if (start + count == transferRanges[row * 2 + 1]) {
+                val cells = builder?.let {
+                    if (start + count < cols) it.copy(previous, start + count, cols)
+                    it.build()
+                } ?: previous
+                updateLine(row, cells, softWrapped, damageRegions, row in movedRows)
+                builder = null
             }
         }
 
@@ -1438,13 +1425,11 @@ internal class TerminalEmulatorImpl(
         }
     }
 
-    private fun processScheduledUpdates() {
-        synchronized(damageLock) {
-            damagePosted = false
-            // Limit sustained work to roughly one snapshot per refresh interval,
-            // without adding a full interval to every newly arriving input burst.
-            nextSnapshotNanos = System.nanoTime() + 16_000_000L
-        }
+    private fun processScheduledUpdates(): Unit = synchronized(damageLock) {
+        damagePosted = false
+        // Limit sustained work to roughly one snapshot per refresh interval,
+        // without adding a full interval to every newly arriving input burst.
+        nextSnapshotNanos = System.nanoTime() + 16_000_000L
         processPendingUpdates()
     }
 
@@ -1554,8 +1539,6 @@ internal class TerminalEmulatorImpl(
     companion object {
         private const val TAG = "TerminalEmulatorImpl"
         private const val MAX_URL_SCAN_CONTINUATION_ROWS = 6
-        /** Rows fetched per damageLock hold during a redraw; bounds how long input can wait. */
-        private const val ROWS_PER_LOCK = 24
     }
 }
 
