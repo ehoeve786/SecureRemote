@@ -30,6 +30,7 @@ class KeyRepository(private val config: EncryptedConfigStore) {
     fun privateKey(id: String): String? = config.get(pemKey(id))
 
     /** Insert a new key. Returns the generated id. */
+    @Synchronized
     fun add(
         name: String,
         privatePem: String,
@@ -50,11 +51,13 @@ class KeyRepository(private val config: EncryptedConfigStore) {
         return id
     }
 
+    @Synchronized
     fun updateMetadata(key: SavedKey) {
         val updated = list().map { if (it.id == key.id) key else it }
         config.put(listKey, json.encodeToString(updated))
     }
 
+    @Synchronized
     fun delete(id: String) {
         val updated = list().filterNot { it.id == id }
         config.put(listKey, json.encodeToString(updated))

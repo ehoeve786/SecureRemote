@@ -23,6 +23,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -48,6 +49,8 @@ type netTun struct {
 	stack          *stack.Stack
 	events         chan tun.Event
 	incomingPacket chan *buffer.View
+	done           chan struct{}
+	closeOnce      sync.Once
 	mtu            int
 	dnsServers     []netip.Addr
 	hasV4, hasV6   bool
@@ -66,6 +69,7 @@ func CreateNetTUN(localAddresses, dnsServers []netip.Addr, mtu int) (tun.Device,
 		stack:          stack.New(opts),
 		events:         make(chan tun.Event, 10),
 		incomingPacket: make(chan *buffer.View),
+		done:           make(chan struct{}),
 		dnsServers:     dnsServers,
 		mtu:            mtu,
 	}
@@ -124,8 +128,10 @@ func (t *netTun) Events() <-chan tun.Event {
 }
 
 func (t *netTun) Read(slab []byte, packets []tun.ReadPacket) (int, error) {
-	view, ok := <-t.incomingPacket
-	if !ok {
+	var view *buffer.View
+	select {
+	case view = <-t.incomingPacket:
+	case <-t.done:
 		return 0, os.ErrClosed
 	}
 
@@ -167,22 +173,23 @@ func (t *netTun) WriteNotify() {
 	view := pkt.ToView()
 	pkt.DecRef()
 
-	t.incomingPacket <- view
+	// Never closes incomingPacket: a send on a closed channel panics. Close signals done instead.
+	select {
+	case t.incomingPacket <- view:
+	case <-t.done:
+		view.Release()
+	}
 }
 
 func (t *netTun) Close() error {
-	t.stack.RemoveNIC(1)
-
-	if t.events != nil {
-		close(t.events)
-	}
-
-	t.ep.Close()
-
-	if t.incomingPacket != nil {
-		close(t.incomingPacket)
-	}
-
+	t.closeOnce.Do(func() {
+		close(t.done)
+		t.stack.RemoveNIC(1)
+		if t.events != nil {
+			close(t.events)
+		}
+		t.ep.Close()
+	})
 	return nil
 }
 
