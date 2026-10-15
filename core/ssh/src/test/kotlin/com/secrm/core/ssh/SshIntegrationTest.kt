@@ -96,7 +96,7 @@ class SshIntegrationTest {
 
     private suspend fun shellOrFail() {
         val ok = ssh.ensureShell()
-        println("SSHDBG shell=$ok alive=${ssh.activeSession() != null} log=${ssh.recentLog().replace("\n", " | ").take(1500)}")
+        println("SSHDBG shell=$ok alive=${ssh.activeSession() != null} log=${ssh.recentLog().lines().takeLast(4).joinToString(" | ")}")
         assertTrue("shell did not open", ok)
     }
 
@@ -118,7 +118,7 @@ class SshIntegrationTest {
         val typed = ssh.shellOutputStream()!!
         val sftp = SftpClient(ssh)
         try {
-            println("SSHDBG before-sftp alive=${ssh.activeSession() != null} log=${ssh.recentLog().replace("\n", " | ").take(1500)}")
+            println("SSHDBG before-sftp alive=${ssh.activeSession() != null} log=${ssh.recentLog().lines().takeLast(4).joinToString(" | ")}")
             val home = sftp.home()
             assertTrue(sftp.list(home).any { it.name == "hello.txt" })
             val file = SftpClient.join(home, "hello.txt")
