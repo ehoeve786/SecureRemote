@@ -46,7 +46,7 @@ interface SavedConnections {
  * HostRediscovery) and saves it.
  */
 suspend fun SshClientManager.connectSaved(conn: SavedConnection, auth: SshAuth, saved: SavedConnections): Boolean {
-    fun cfg(host: String) = SshConfig(host = host, port = conn.port, username = conn.user, auth = auth, via = conn.via, hostKey = conn.hostKey)
+    fun cfg(host: String) = SshConfig(host = host, port = conn.port, username = conn.user, auth = auth, via = conn.via, hostKey = conn.hostKey, name = conn.name)
     if (connect(cfg(conn.host))) {
         if (conn.hostKey == null) saved.save(conn.copy(hostKey = hostKey))
         return true

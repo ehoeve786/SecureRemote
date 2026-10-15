@@ -51,12 +51,12 @@ fun DashboardScreen(
     var connections by remember { mutableStateOf(app.connections.list()) }
     var editing by remember { mutableStateOf<SavedConnection?>(null) }
     var showForm by remember { mutableStateOf(false) }
-    var activeName by remember { mutableStateOf<String?>(null) }
+    var activeName by remember { mutableStateOf(if (app.ssh.state.value is SshState.Connected) app.ssh.connectedName else null) }
     var connecting by remember { mutableStateOf<String?>(null) }
     var connectError by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(sshState) {
-        if (sshState !is SshState.Connected) activeName = null
+        activeName = if (sshState is SshState.Connected) app.ssh.connectedName else null
     }
 
     Scaffold(

@@ -26,6 +26,8 @@ data class SshConfig(
     val via: String? = null,
     /** Trusted host key (base64), or null to trust whatever the server presents (first connect). */
     val hostKey: String? = null,
+    /** Name of the saved connection this is, for showing which host is live. */
+    val name: String? = null,
 )
 
 private val log = ArrayDeque<String>()
@@ -56,6 +58,9 @@ class SshClientManager {
 
     /** Counts successful connects, so screens can tell a new session from the one they were built for. */
     @Volatile var generation = 0; private set
+
+    /** Saved-connection name of the live session (set before the state turns Connected). */
+    @Volatile var connectedName: String? = null; private set
 
     /** `user@host` of the live session, for display. */
     @Volatile var target: String? = null; private set
@@ -145,6 +150,7 @@ class SshClientManager {
             s.connect(if (cfg.via != null) maxOf(cfg.connectTimeoutMs, 30_000) else cfg.connectTimeoutMs)
             hostKey = s.hostKey?.key
             target = "${cfg.username}@${cfg.host}"
+            connectedName = cfg.name
             generation++
             _state.value = SshState.Connected(s.serverVersion ?: "unknown")
             true
@@ -200,6 +206,7 @@ class SshClientManager {
     }
 
     private fun cleanup() {
+        connectedName = null
         runCatching { shell?.disconnect() }; shell = null
         runCatching { session?.disconnect() }; session = null
     }
