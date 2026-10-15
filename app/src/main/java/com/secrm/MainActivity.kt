@@ -9,6 +9,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.fragment.app.FragmentActivity
 import com.secrm.design.SecrmTheme
 import com.secrm.design.isDark
+import com.secrm.ui.KeystoreRecoveryPrompt
 import com.secrm.ui.SecrmNavHost
 
 /** FragmentActivity: required by BiometricPrompt. */
@@ -26,7 +27,10 @@ class MainActivity : FragmentActivity() {
                 enableEdgeToEdge(statusBarStyle = bars, navigationBarStyle = bars)
                 onDispose {}
             }
-            SecrmTheme(app.ui.mode, app.ui.dynamicColor) { SecrmNavHost(app) }
+            SecrmTheme(app.ui.mode, app.ui.dynamicColor) {
+                SecrmNavHost(app)
+                KeystoreRecoveryPrompt(app)
+            }
         }
     }
 }
