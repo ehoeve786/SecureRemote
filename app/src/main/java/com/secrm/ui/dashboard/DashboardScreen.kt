@@ -279,10 +279,11 @@ private fun ConnectionCard(
             }
             if (isActive) {
                 Row(horizontalArrangement = Arrangement.spacedBy(Space.sm), verticalAlignment = Alignment.CenterVertically) {
-                    Button(onShell) { Icon(SecrmIcons.Terminal, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Terminal") }
-                    FilledTonalButton(onFiles) { Icon(SecrmIcons.Folder, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Files") }
+                    val pill = PaddingValues(horizontal = 12.dp)
+                    Button(onShell, contentPadding = pill) { Icon(SecrmIcons.Terminal, null, Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text("Terminal", maxLines = 1, softWrap = false) }
+                    FilledTonalButton(onFiles, contentPadding = pill) { Icon(SecrmIcons.Folder, null, Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text("Files", maxLines = 1, softWrap = false) }
                     Spacer(Modifier.weight(1f))
-                    TextButton(onDisconnect) { Text("Disconnect", color = s.error) }
+                    TextButton(onDisconnect, contentPadding = pill) { Text("Disconnect", color = s.error, maxLines = 1, softWrap = false) }
                 }
             } else {
                 FilledTonalButton(onConnect, enabled = !isConnecting, modifier = Modifier.fillMaxWidth()) {
