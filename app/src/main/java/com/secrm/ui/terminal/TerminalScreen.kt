@@ -1,5 +1,6 @@
 package com.secrm.ui.terminal
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -41,7 +42,8 @@ fun TerminalScreen(app: SecureRemoteApp, onOpenHosts: () -> Unit, onOpenFiles: (
     val ctx = androidx.compose.ui.platform.LocalContext.current
 
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).safeDrawingPadding()) {
-        Row(
+        // Hidden while the keyboard is up, so the terminal gets the room.
+        AnimatedVisibility(visible = !WindowInsets.isImeVisible) { Row(
             Modifier.fillMaxWidth().height(48.dp).padding(horizontal = Space.md),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -54,7 +56,7 @@ fun TerminalScreen(app: SecureRemoteApp, onOpenHosts: () -> Unit, onOpenFiles: (
                 (ctx.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager)
                     .setPrimaryClip(android.content.ClipData.newPlainText("command output", bridge.lastOutput()))
             }) { Text("Copy output") }
-        }
+        } }
         // The terminal itself is always dark, whatever the app theme.
         Box(Modifier.weight(1f).background(androidx.compose.ui.graphics.Color.Black)) {
             TerminalSurface(bridge = bridge, onReady = { ready = it }, modifier = Modifier.fillMaxSize())
@@ -64,9 +66,9 @@ fun TerminalScreen(app: SecureRemoteApp, onOpenHosts: () -> Unit, onOpenFiles: (
         // Extra-keys toolbar
         Row(
             Modifier.fillMaxWidth()
-                .padding(horizontal = Space.md, vertical = Space.sm)
+                .padding(horizontal = Space.md, vertical = 4.dp)
                 .background(MaterialTheme.colorScheme.surfaceContainerHigh, MaterialTheme.shapes.extraLarge)
-                .padding(horizontal = Space.sm, vertical = 6.dp),
+                .padding(horizontal = Space.sm, vertical = 2.dp),
             horizontalArrangement = Arrangement.spacedBy(2.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -87,7 +89,7 @@ fun TerminalScreen(app: SecureRemoteApp, onOpenHosts: () -> Unit, onOpenFiles: (
 @Composable
 private fun Key(label: String, onClick: () -> Unit) {
     Box(
-        modifier = Modifier.size(width = 40.dp, height = 36.dp).tappable(onClick),
+        modifier = Modifier.size(width = 40.dp, height = 32.dp).tappable(onClick),
         contentAlignment = Alignment.Center
     ) {
         Text(label, style = MaterialTheme.mono, color = MaterialTheme.colorScheme.onSurface)
