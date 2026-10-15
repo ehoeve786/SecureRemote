@@ -54,6 +54,12 @@ class SshClientManager {
     private val _state = MutableStateFlow<SshState>(SshState.Disconnected)
     val state: StateFlow<SshState> = _state.asStateFlow()
 
+    /** Counts successful connects, so screens can tell a new session from the one they were built for. */
+    @Volatile var generation = 0; private set
+
+    /** `user@host` of the live session, for display. */
+    @Volatile var target: String? = null; private set
+
     /** Host key (base64) the last successful connect saw. */
     @Volatile var hostKey: String? = null; private set
 
@@ -138,6 +144,8 @@ class SshClientManager {
 
             s.connect(if (cfg.via != null) maxOf(cfg.connectTimeoutMs, 30_000) else cfg.connectTimeoutMs)
             hostKey = s.hostKey?.key
+            target = "${cfg.username}@${cfg.host}"
+            generation++
             _state.value = SshState.Connected(s.serverVersion ?: "unknown")
             true
         } catch (t: Throwable) {

@@ -11,7 +11,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -38,7 +38,6 @@ import kotlinx.coroutines.launch
 @Composable
 fun DashboardScreen(
     app: SecureRemoteApp,
-    onOpenSettings: () -> Unit,
     onOpenShell: () -> Unit
 ) {
     val sshState by app.ssh.state.collectAsState()
@@ -68,11 +67,6 @@ fun DashboardScreen(
                         )
                     }
                 },
-                actions = {
-                    IconButton(onClick = onOpenSettings) {
-                        Icon(Icons.Rounded.Settings, "Settings", tint = Palette.TextSecondary)
-                    }
-                },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Palette.Void)
             )
         },
@@ -80,10 +74,8 @@ fun DashboardScreen(
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = { editing = null; showForm = true },
-                containerColor = Palette.Indigo,
-                contentColor = Color.White,
                 text = { Text("New connection", fontWeight = FontWeight.Medium) },
-                icon = { Text("+", style = SecrmType.Title) }
+                icon = { Icon(Icons.Rounded.Add, null) }
             )
         }
     ) { padding ->
@@ -314,7 +306,7 @@ private fun ConnectionCard(
         Modifier.fillMaxWidth()
             .clip(RoundedCornerShape(Space.cardRadius))
             .background(Palette.Surface1)
-            .clickableNoRipple { if (isActive) onShell() else onConnect() }
+            .tappable { if (isActive) onShell() else onConnect() }
             .padding(Space.lg),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -340,7 +332,7 @@ private fun ConnectionCard(
                 color = Palette.TextSecondary,
                 modifier = Modifier
                     .padding(horizontal = Space.sm)
-                    .clickableNoRipple { showMenu = true }
+                    .tappable { showMenu = true }
             )
             DropdownMenu(
                 expanded = showMenu,
@@ -551,11 +543,11 @@ private fun AuthTab(label: String, selected: Boolean, modifier: Modifier = Modif
         modifier
             .clip(RoundedCornerShape(Space.pillRadius))
             .background(if (selected) Palette.Indigo else Color.Transparent)
-            .clickableNoRipple(onClick)
+            .tappable(onClick)
             .padding(vertical = 10.dp),
         contentAlignment = Alignment.Center
     ) {
         Text(label, style = SecrmType.Label,
-            color = if (selected) Color.White else Palette.TextSecondary)
+            color = if (selected) Palette.OnIndigo else Palette.TextSecondary)
     }
 }

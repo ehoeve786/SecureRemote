@@ -32,10 +32,30 @@ class SecureRemoteApp : Application() {
     lateinit var keys: KeyRepository; private set
     lateinit var vault: BitwardenVault; private set
     lateinit var oauth: com.secrm.core.server.http.McpOAuth; private set
+    lateinit var ui: com.secrm.data.UiPrefs; private set
+    /** File browser state for the connected host; survives tab switches. */
+    val files by lazy { com.secrm.ui.sftp.SftpController(this, ssh) }
+
+    private var bridge: com.secrm.core.terminal.TerminalBridge? = null
+    private var bridgeGeneration = -1
+
+    /**
+     * The terminal for the live SSH session, or null when not connected. One per session, so the
+     * shell and its scrollback survive switching tabs; a new connection gets a new one.
+     */
+    @Synchronized
+    fun terminal(): com.secrm.core.terminal.TerminalBridge? {
+        if (ssh.state.value !is com.secrm.core.ssh.SshState.Connected) return null
+        if (bridge == null || bridgeGeneration != ssh.generation) {
+            bridge = com.secrm.core.terminal.TerminalBridge(ssh); bridgeGeneration = ssh.generation
+        }
+        return bridge
+    }
 
     override fun onCreate() {
         super.onCreate()
         config = EncryptedConfigStore(this)
+        ui = com.secrm.data.UiPrefs(this)
         val scope = MainScope()
         tailscale = TailscaleTunnel(this, scope, targetPort = 7824).apply { resume() }
         wireguard = WireGuardTunnel(this, scope, { config.get("wg.config") },

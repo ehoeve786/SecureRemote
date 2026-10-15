@@ -53,11 +53,15 @@ class SftpClient(private val ssh: SshClientManager) {
             .sortedWith(compareByDescending<SftpEntry> { it.isDir }.thenBy { it.name.lowercase() })
     }
 
-    suspend fun download(path: String, out: OutputStream, onProgress: (Long) -> Unit = {}) =
-        run { it.get(path, out, monitor(onProgress)) }
+    /** [shouldCancel] is polled as data moves; when it turns true the transfer stops and throws. */
+    suspend fun download(path: String, out: OutputStream, shouldCancel: () -> Boolean = { false }, onProgress: (Long) -> Unit = {}) =
+        run { it.get(path, out, monitor(shouldCancel, onProgress)) }
 
-    suspend fun upload(input: InputStream, path: String, onProgress: (Long) -> Unit = {}) =
-        run { it.put(input, path, monitor(onProgress), ChannelSftp.OVERWRITE) }
+    suspend fun upload(input: InputStream, path: String, shouldCancel: () -> Boolean = { false }, onProgress: (Long) -> Unit = {}) =
+        run { it.put(input, path, monitor(shouldCancel, onProgress), ChannelSftp.OVERWRITE) }
+
+    /** Removes a file, ignoring failure (used to clean up a cancelled upload). */
+    suspend fun removeQuietly(path: String) { runCatching { run { it.rm(path) } } }
 
     suspend fun mkdir(path: String) = run { it.mkdir(path) }
     suspend fun rename(from: String, to: String) = run { it.rename(from, to) }
@@ -74,10 +78,10 @@ class SftpClient(private val ssh: SshClientManager) {
         ch.rmdir(path)
     }
 
-    private fun monitor(onProgress: (Long) -> Unit) = object : SftpProgressMonitor {
+    private fun monitor(shouldCancel: () -> Boolean, onProgress: (Long) -> Unit) = object : SftpProgressMonitor {
         var total = 0L
         override fun init(op: Int, src: String?, dest: String?, max: Long) {}
-        override fun count(n: Long): Boolean { total += n; onProgress(total); return true }
+        override fun count(n: Long): Boolean { total += n; onProgress(total); return !shouldCancel() }
         override fun end() {}
     }
 

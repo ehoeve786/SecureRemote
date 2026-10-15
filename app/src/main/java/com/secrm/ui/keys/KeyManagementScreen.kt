@@ -12,6 +12,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -32,7 +33,7 @@ import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun KeyManagementScreen(app: SecureRemoteApp, onBack: () -> Unit) {
+fun KeyManagementScreen(app: SecureRemoteApp, onBack: (() -> Unit)? = null) {
     var keys by remember { mutableStateOf(app.keys.list()) }
     var showImport by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<SavedKey?>(null) }
@@ -43,7 +44,7 @@ fun KeyManagementScreen(app: SecureRemoteApp, onBack: () -> Unit) {
             TopAppBar(
                 title = { Text("SSH Keys", style = SecrmType.Title, color = Palette.TextPrimary) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    if (onBack != null) IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Rounded.KeyboardArrowLeft, "Back", tint = Palette.TextSecondary)
                     }
                 },
@@ -54,10 +55,8 @@ fun KeyManagementScreen(app: SecureRemoteApp, onBack: () -> Unit) {
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = { editing = null; showImport = true },
-                containerColor = Palette.Indigo,
-                contentColor = Color.White,
                 text = { Text("Import key", fontWeight = FontWeight.Medium) },
-                icon = { Text("+", style = SecrmType.Title) }
+                icon = { Icon(Icons.Rounded.Add, null) }
             )
         }
     ) { padding ->
@@ -156,7 +155,7 @@ private fun KeyRow(
         Box {
             Text("⋮", style = SecrmType.Title, color = Palette.TextSecondary,
                 modifier = Modifier.padding(horizontal = Space.sm)
-                    .clickableNoRipple { showMenu = true })
+                    .tappable { showMenu = true })
             DropdownMenu(
                 expanded = showMenu,
                 onDismissRequest = { showMenu = false },

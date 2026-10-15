@@ -5,9 +5,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.Text
+import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -24,55 +22,50 @@ import com.secrm.core.terminal.TerminalBridge
 import com.secrm.core.terminal.TerminalSurface
 import com.secrm.design.*
 
+/** Terminal tab: the live SSH shell. The shell belongs to the session ([SecureRemoteApp.terminal]), so it survives tab switches. */
 @Composable
-fun TerminalScreen(app: SecureRemoteApp, onBack: () -> Unit) {
-    val bridge = remember { TerminalBridge(app.ssh) }
-    var ready by remember { mutableStateOf<Boolean?>(null) }
+fun TerminalScreen(app: SecureRemoteApp, onOpenHosts: () -> Unit, onOpenFiles: () -> Unit) {
+    val sshState by app.ssh.state.collectAsState()
+    val bridge = if (sshState is com.secrm.core.ssh.SshState.Connected) app.terminal() else null
+    if (bridge == null) {
+        com.secrm.ui.common.StateMessage(
+            SecrmIcons.Terminal, "No active connection",
+            "Connect to a host to open a shell.",
+            action = "Choose a host" to onOpenHosts,
+        )
+        return
+    }
+    var ready by remember(bridge) { mutableStateOf<Boolean?>(null) }
     var selecting by remember { mutableStateOf<String?>(null) }
-    var sftpMode by remember { mutableStateOf(false) }
-    val sftp = remember { com.secrm.core.ssh.SftpClient(app.ssh) }
-    val focus = androidx.compose.ui.platform.LocalFocusManager.current
-    val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
-    androidx.activity.compose.BackHandler(sftpMode) { sftpMode = false }
     selecting?.let { TranscriptSelector(it) { selecting = null } }
+    val ctx = androidx.compose.ui.platform.LocalContext.current
 
-    Column(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black).safeDrawingPadding()) {
+    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).safeDrawingPadding()) {
         Row(
-            Modifier.fillMaxWidth().height(40.dp).padding(horizontal = Space.sm),
+            Modifier.fillMaxWidth().height(48.dp).padding(horizontal = Space.md),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Rounded.KeyboardArrowLeft, "Back", tint = Palette.TextTertiary)
-            }
-            Spacer(Modifier.weight(1f))
-            ModeSwitch(sftpMode) { sftpMode = it; if (it) { focus.clearFocus(); keyboard?.hide() } }
-            Spacer(Modifier.weight(1f))
-            val ctx = androidx.compose.ui.platform.LocalContext.current
-            if (!sftpMode) Box(Modifier.clickableNoRipple { selecting = bridge.transcript() }.padding(Space.sm)) {
-                Text("Select text", style = SecrmType.MonoSmall, color = Palette.Indigo)
-            }
-            if (!sftpMode) Box(Modifier.clickableNoRipple {
+            ModeSwitch(onFiles = onOpenFiles)
+            Text(app.ssh.target.orEmpty(), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f).padding(horizontal = Space.md))
+            TextButton({ selecting = bridge.transcript() }) { Text("Select") }
+            TextButton({
                 (ctx.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager)
                     .setPrimaryClip(android.content.ClipData.newPlainText("command output", bridge.lastOutput()))
-            }.padding(Space.sm)) {
-                Text("Copy output", style = SecrmType.MonoSmall, color = Palette.Indigo)
-            }
+            }) { Text("Copy output") }
         }
-        Box(Modifier.weight(1f)) {
-            // The terminal stays composed (its shell keeps running) under the file browser.
+        // The terminal itself is always dark, whatever the app theme.
+        Box(Modifier.weight(1f).background(androidx.compose.ui.graphics.Color.Black)) {
             TerminalSurface(bridge = bridge, onReady = { ready = it }, modifier = Modifier.fillMaxSize())
             if (ready == false) Text("Could not open a shell. Go back and reconnect.",
-                style = SecrmType.Body, color = Palette.Danger, modifier = Modifier.padding(Space.md))
-            if (sftpMode) com.secrm.ui.sftp.SftpPanel(
-                sftp, modifier = Modifier.fillMaxSize(),
-                onCdInTerminal = { dir -> bridge.send("cd '" + dir.replace("'", "'\\''") + "'\r"); sftpMode = false },
-            )
+                style = SecrmType.Body, color = androidx.compose.ui.graphics.Color(0xFFFF8A80), modifier = Modifier.padding(Space.md))
         }
         // Extra-keys toolbar
-        if (!sftpMode) Row(
+        Row(
             Modifier.fillMaxWidth()
                 .padding(horizontal = Space.md, vertical = Space.sm)
-                .background(Palette.Surface2.copy(alpha = 0.9f), RoundedCornerShape(Space.pillRadius))
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh, MaterialTheme.shapes.extraLarge)
                 .padding(horizontal = Space.sm, vertical = 6.dp),
             horizontalArrangement = Arrangement.spacedBy(2.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -94,7 +87,7 @@ fun TerminalScreen(app: SecureRemoteApp, onBack: () -> Unit) {
 @Composable
 private fun Key(label: String, onClick: () -> Unit) {
     Box(
-        modifier = Modifier.size(width = 40.dp, height = 36.dp).clickableNoRipple(onClick),
+        modifier = Modifier.size(width = 40.dp, height = 36.dp).tappable(onClick),
         contentAlignment = Alignment.Center
     ) {
         Text(label, style = SecrmType.MonoSmall, color = Palette.TextPrimary)
@@ -139,7 +132,7 @@ private fun TranscriptSelector(text: String, onClose: () -> Unit) {
         onDismissRequest = onClose,
         properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
     ) {
-        Column(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black).safeDrawingPadding()) {
+        Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).safeDrawingPadding()) {
             Row(
                 Modifier.fillMaxWidth().height(40.dp).padding(horizontal = Space.sm),
                 verticalAlignment = Alignment.CenterVertically
@@ -149,11 +142,11 @@ private fun TranscriptSelector(text: String, onClose: () -> Unit) {
                 }
                 Text(if (anchor < 0) "Long-press a line, then drag" else "${kotlin.math.abs(end - anchor) + 1} lines",
                     style = SecrmType.MonoSmall, color = Palette.TextTertiary, modifier = Modifier.weight(1f))
-                Box(Modifier.clickableNoRipple { anchor = 0; end = lines.lastIndex }.padding(Space.sm)) {
+                Box(Modifier.tappable { anchor = 0; end = lines.lastIndex }.padding(Space.sm)) {
                     Text("All", style = SecrmType.MonoSmall, color = Palette.Indigo)
                 }
-                Box(Modifier.clickableNoRipple {
-                    if (anchor < 0) return@clickableNoRipple
+                Box(Modifier.tappable {
+                    if (anchor < 0) return@tappable
                     (ctx.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager)
                         .setPrimaryClip(android.content.ClipData.newPlainText("terminal", lines.subList(minOf(anchor, end), maxOf(anchor, end) + 1).joinToString("\n")))
                     onClose()
@@ -176,7 +169,7 @@ private fun TranscriptSelector(text: String, onClose: () -> Unit) {
             ) {
                 items(lines.size) { i ->
                     val selected = anchor >= 0 && i in minOf(anchor, end)..maxOf(anchor, end)
-                    Text(lines[i], color = androidx.compose.ui.graphics.Color.White,
+                    Text(lines[i], color = MaterialTheme.colorScheme.onSurface,
                         fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, fontSize = 12.sp,
                         modifier = Modifier.fillMaxWidth().background(if (selected) Palette.Indigo.copy(alpha = 0.4f) else androidx.compose.ui.graphics.Color.Transparent))
                 }
@@ -185,16 +178,11 @@ private fun TranscriptSelector(text: String, onClose: () -> Unit) {
     }
 }
 
-/** SSH | SFTP switch for the connected host. */
+/** SSH | SFTP switch for the connected host: SSH is this screen, SFTP opens the file browser. */
 @Composable
-private fun ModeSwitch(sftp: Boolean, onChange: (Boolean) -> Unit) {
-    Row(Modifier.background(Palette.Surface2, RoundedCornerShape(Space.pillRadius)).padding(2.dp)) {
-        listOf("SSH" to false, "SFTP" to true).forEach { (label, mode) ->
-            val on = sftp == mode
-            Box(
-                Modifier.background(if (on) Palette.Indigo else androidx.compose.ui.graphics.Color.Transparent, RoundedCornerShape(Space.pillRadius))
-                    .clickableNoRipple { onChange(mode) }.padding(horizontal = 14.dp, vertical = 5.dp)
-            ) { Text(label, style = SecrmType.MonoSmall, color = if (on) androidx.compose.ui.graphics.Color.White else Palette.TextSecondary) }
-        }
+private fun ModeSwitch(onFiles: () -> Unit) {
+    SingleChoiceSegmentedButtonRow {
+        SegmentedButton(selected = true, onClick = {}, shape = SegmentedButtonDefaults.itemShape(0, 2), icon = {}) { Text("SSH") }
+        SegmentedButton(selected = false, onClick = onFiles, shape = SegmentedButtonDefaults.itemShape(1, 2), icon = {}) { Text("SFTP") }
     }
 }

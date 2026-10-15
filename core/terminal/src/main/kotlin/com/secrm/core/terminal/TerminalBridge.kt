@@ -52,8 +52,12 @@ class TerminalBridge(private val ssh: SshClientManager) {
         onResize = { ssh.resizePty(it.columns, it.rows, it.widthPixels, it.heightPixels) },
     )
 
-    /** Opens the shell and starts the read loop. Returns false if no shell. */
-    suspend fun start(): Boolean {
+    private var started: Boolean? = null
+
+    /** Opens the shell and starts the read loop, once; later calls return the first result. */
+    suspend fun start(): Boolean = started ?: begin().also { started = it }
+
+    private suspend fun begin(): Boolean {
         if (!ssh.ensureShell()) return false
         val input = ssh.shellInputStream() ?: return false
         out = ssh.shellOutputStream()

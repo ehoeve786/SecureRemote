@@ -24,25 +24,23 @@ import com.secrm.core.tunnel.Tunnel
 import com.secrm.design.*
 import com.secrm.service.McpServerService
 import com.secrm.ui.agent.BitwardenScreen
-import com.secrm.ui.keys.KeyManagementScreen
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ServerControlScreen(app: SecureRemoteApp, onBack: () -> Unit) {
+fun ServerControlScreen(app: SecureRemoteApp, onBack: (() -> Unit)? = null) {
     var showAgent by remember { mutableStateOf(false) }
-    var showKeys by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
+    androidx.activity.compose.BackHandler(showAgent) { showAgent = false }
     if (showAgent) { BitwardenScreen(app, onBack = { showAgent = false }); return }
-    if (showKeys) { KeyManagementScreen(app, onBack = { showKeys = false }); return }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Settings", style = SecrmType.Title, color = Palette.TextPrimary) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    if (onBack != null) IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Rounded.KeyboardArrowLeft, "Back", tint = Palette.TextSecondary)
                     }
                 },
@@ -61,12 +59,12 @@ fun ServerControlScreen(app: SecureRemoteApp, onBack: () -> Unit) {
             ),
             verticalArrangement = Arrangement.spacedBy(Space.lg)
         ) {
+            item { SectionLabel("APPEARANCE") }
+            item { AppearanceSection(app.ui) }
+
             item { SectionLabel("PRIVATE NETWORK") }
             item { TailscaleSection(app) }
             item { WireGuardSection(app) }
-
-            item { SectionLabel("SSH KEYS") }
-            item { KeyEntryCard(onOpen = { showKeys = true }) }
 
             item { SectionLabel("SSH AGENT") }
             item { AgentEntryCard(onOpen = { showAgent = true }) }
@@ -76,6 +74,32 @@ fun ServerControlScreen(app: SecureRemoteApp, onBack: () -> Unit) {
 
             item { SectionLabel("ABOUT") }
             item { AboutSection() }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AppearanceSection(ui: com.secrm.data.UiPrefs) {
+    GlassCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(Space.lg), verticalArrangement = Arrangement.spacedBy(Space.md)) {
+            val modes = ThemeMode.values()
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                modes.forEachIndexed { i, m ->
+                    SegmentedButton(
+                        selected = ui.mode == m, onClick = { ui.setMode(m) },
+                        shape = SegmentedButtonDefaults.itemShape(i, modes.size),
+                    ) { Text(m.name) }
+                }
+            }
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Match system colours", style = MaterialTheme.typography.bodyLarge)
+                    Text("Use your wallpaper's palette (Material You) instead of the SecureRemote indigo.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Switch(ui.dynamicColor, ui::setDynamicColor)
+            }
         }
     }
 }
@@ -369,21 +393,3 @@ private fun AgentEntryCard(onOpen: () -> Unit) {
 }
 
 
-@Composable
-private fun KeyEntryCard(onOpen: () -> Unit) {
-    GlassCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(Space.lg)) {
-            Text("SSH Keys",
-                style = SecrmType.Body.copy(fontWeight = FontWeight.Medium),
-                color = Palette.TextPrimary)
-            Spacer(Modifier.height(Space.xs))
-            Text(
-                "Import private keys for passwordless authentication. Keys are " +
-                "stored in the Android Keystore and never leave the device.",
-                style = SecrmType.Body, color = Palette.TextSecondary
-            )
-            Spacer(Modifier.height(Space.md))
-            PillButton("Manage keys", PillStyle.Primary, Modifier.fillMaxWidth()) { onOpen() }
-        }
-    }
-}
