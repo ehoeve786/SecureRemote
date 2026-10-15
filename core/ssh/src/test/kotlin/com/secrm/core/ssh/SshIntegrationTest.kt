@@ -71,7 +71,7 @@ class SshIntegrationTest {
         Files.writeString(root.resolve("hello.txt"), "hi there")
         port = ServerSocket(0).use { it.localPort }
         server = SshServer.setUpDefaultServer().apply {
-            setPort(port)
+            setPort(this@SshIntegrationTest.port)
             keyPairProvider = SimpleGeneratorHostKeyProvider(root.resolve("hostkey.ser"))
             passwordAuthenticator = PasswordAuthenticator { u, p, _ -> u == user && p == password }
             fileSystemFactory = VirtualFileSystemFactory(root)
