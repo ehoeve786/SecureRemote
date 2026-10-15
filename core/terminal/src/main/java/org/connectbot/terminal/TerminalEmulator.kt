@@ -18,6 +18,9 @@ package org.connectbot.terminal
 
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
+import kotlin.contracts.ExperimentalContracts
+import kotlin.contracts.InvocationKind
+import kotlin.contracts.contract
 
 import android.icu.lang.UCharacter
 import android.icu.lang.UProperty
@@ -443,7 +446,11 @@ internal class TerminalEmulatorImpl(
     // Synchronous JNI callbacks may reenter this monitor, never native methods.
     // MUST be initialized before terminalNative.
     private val damageLock = ReentrantLock(true) // fair: writers, snapshots and key input take turns
-    private inline fun <T> damageLocked(block: () -> T): T = damageLock.withLock { block() }
+    @OptIn(ExperimentalContracts::class)
+    private inline fun <T> damageLocked(block: () -> T): T {
+        contract { callsInPlace(block, InvocationKind.EXACTLY_ONCE) }
+        return damageLock.withLock { block() }
+    }
     private val pendingDamageRegions = mutableListOf<DamageRegion>()
     private var damagePosted = false
     private var nextSnapshotNanos = System.nanoTime()
