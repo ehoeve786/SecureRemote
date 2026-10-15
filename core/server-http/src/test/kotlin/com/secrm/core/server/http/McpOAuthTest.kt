@@ -2,7 +2,6 @@ package com.secrm.core.server.http
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -29,8 +28,8 @@ class McpOAuthTest {
     @Test fun fullPkceFlowIssuesUsableTokens() {
         val oauth = newOAuth()
         val pairing = oauth.newPairingCode()
-        val code = assertNotNull(pair(oauth, pairing))
-        val (access, refresh) = assertNotNull(exchange(oauth, code))
+        val code = requireNotNull(pair(oauth, pairing))
+        val (access, refresh) = requireNotNull(exchange(oauth, code))
         assertTrue(oauth.isValid(access))
         assertFalse("refresh token must not work as an access token", oauth.isValid(refresh))
     }
@@ -38,7 +37,7 @@ class McpOAuthTest {
     @Test fun pairingCodeIsSingleUse() {
         val oauth = newOAuth()
         val pairing = oauth.newPairingCode()
-        assertNotNull(pair(oauth, pairing))
+        requireNotNull(pair(oauth, pairing))
         assertNull(pair(oauth, pairing))
     }
 
@@ -52,7 +51,7 @@ class McpOAuthTest {
     @Test fun pairingCodeIsCaseAndWhitespaceTolerant() {
         val oauth = newOAuth()
         val pairing = oauth.newPairingCode()
-        assertNotNull(pair(oauth, "  ${pairing.lowercase()} "))
+        requireNotNull(pair(oauth, "  ${pairing.lowercase()} "))
     }
 
     @Test fun pairingCodeExpiresAfterTenMinutes() {
@@ -66,37 +65,37 @@ class McpOAuthTest {
     @Test fun authorizationCodeExpiresAfterAMinute() {
         val clock = Clock()
         val oauth = newOAuth(clock = clock)
-        val code = assertNotNull(pair(oauth, oauth.newPairingCode()))
+        val code = requireNotNull(pair(oauth, oauth.newPairingCode()))
         clock.t += 60_001L
         assertNull(exchange(oauth, code))
     }
 
     @Test fun wrongVerifierFailsAndBurnsTheCode() {
         val oauth = newOAuth()
-        val code = assertNotNull(pair(oauth, oauth.newPairingCode()))
+        val code = requireNotNull(pair(oauth, oauth.newPairingCode()))
         assertNull(exchange(oauth, code, v = "not-the-verifier"))
         assertNull(exchange(oauth, code))
     }
 
     @Test fun redirectMismatchIsRejected() {
         val oauth = newOAuth()
-        val code = assertNotNull(pair(oauth, oauth.newPairingCode()))
+        val code = requireNotNull(pair(oauth, oauth.newPairingCode()))
         assertNull(oauth.token(mapOf("grant_type" to "authorization_code", "code" to code,
             "code_verifier" to verifier, "redirect_uri" to "https://claude.com/other")))
     }
 
     @Test fun refreshTokenRotatesAndOldOneStopsWorking() {
         val oauth = newOAuth()
-        val (_, refresh1) = assertNotNull(exchange(oauth, assertNotNull(pair(oauth, oauth.newPairingCode()))))
-        val (access2, refresh2) = assertNotNull(oauth.token(mapOf("grant_type" to "refresh_token", "refresh_token" to refresh1)))
+        val (_, refresh1) = requireNotNull(exchange(oauth, requireNotNull(pair(oauth, oauth.newPairingCode()))))
+        val (access2, refresh2) = requireNotNull(oauth.token(mapOf("grant_type" to "refresh_token", "refresh_token" to refresh1)))
         assertTrue(oauth.isValid(access2))
         assertNull("a refresh token is single-use", oauth.token(mapOf("grant_type" to "refresh_token", "refresh_token" to refresh1)))
-        assertNotNull(oauth.token(mapOf("grant_type" to "refresh_token", "refresh_token" to refresh2)))
+        requireNotNull(oauth.token(mapOf("grant_type" to "refresh_token", "refresh_token" to refresh2)))
     }
 
     @Test fun presentingAccessTokenAsRefreshDoesNotRevokeIt() {
         val oauth = newOAuth()
-        val (access, _) = assertNotNull(exchange(oauth, assertNotNull(pair(oauth, oauth.newPairingCode()))))
+        val (access, _) = requireNotNull(exchange(oauth, requireNotNull(pair(oauth, oauth.newPairingCode()))))
         assertNull(oauth.token(mapOf("grant_type" to "refresh_token", "refresh_token" to access)))
         assertTrue("access token must survive a misused refresh request", oauth.isValid(access))
     }
@@ -104,7 +103,7 @@ class McpOAuthTest {
     @Test fun accessTokenExpiresAfterAnHour() {
         val clock = Clock()
         val oauth = newOAuth(clock = clock)
-        val (access, _) = assertNotNull(exchange(oauth, assertNotNull(pair(oauth, oauth.newPairingCode()))))
+        val (access, _) = requireNotNull(exchange(oauth, requireNotNull(pair(oauth, oauth.newPairingCode()))))
         clock.t += 60 * 60_000L + 1
         assertFalse(oauth.isValid(access))
     }
@@ -119,8 +118,8 @@ class McpOAuthTest {
     @Test fun tokensPersistAsHashesOnly() {
         val store = arrayOfNulls<String>(1)
         val oauth = newOAuth(store)
-        val (access, refresh) = assertNotNull(exchange(oauth, assertNotNull(pair(oauth, oauth.newPairingCode()))))
-        val saved = assertNotNull(store[0])
+        val (access, refresh) = requireNotNull(exchange(oauth, requireNotNull(pair(oauth, oauth.newPairingCode()))))
+        val saved = requireNotNull(store[0])
         assertFalse("raw access token must not be stored", saved.contains(access))
         assertFalse("raw refresh token must not be stored", saved.contains(refresh))
 
@@ -131,7 +130,7 @@ class McpOAuthTest {
     @Test fun revokeAllDisconnectsEveryClient() {
         val store = arrayOfNulls<String>(1)
         val oauth = newOAuth(store)
-        val (access, _) = assertNotNull(exchange(oauth, assertNotNull(pair(oauth, oauth.newPairingCode()))))
+        val (access, _) = requireNotNull(exchange(oauth, requireNotNull(pair(oauth, oauth.newPairingCode()))))
         oauth.revokeAll()
         assertFalse(oauth.isValid(access))
         assertEquals("", store[0])

@@ -8,7 +8,6 @@ import com.secrm.core.domain.ToolSpec
 import kotlinx.serialization.json.*
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -156,7 +155,7 @@ class McpServerIntegrationTest {
         val ok = send(remotePort, "POST", "/register", remoteHost, body =
             """{"redirect_uris":["$claudeRedirect"]}""")
         assertEquals(201, ok.status)
-        assertNotNull(ok.json["client_id"])
+        requireNotNull(ok.json["client_id"])
 
         val bad = send(remotePort, "POST", "/register", remoteHost, body =
             """{"redirect_uris":["https://evil.com/cb"]}""")
@@ -186,7 +185,7 @@ class McpServerIntegrationTest {
             headers = mapOf("Content-Type" to "application/x-www-form-urlencoded"),
             body = form("redirect_uri" to claudeRedirect, "state" to "xyz", "code_challenge" to challenge, "pairing" to pairing))
         assertEquals(302, approve.status)
-        val location = assertNotNull(approve.headers["location"])
+        val location = requireNotNull(approve.headers["location"])
         assertTrue(location, location.startsWith("$claudeRedirect?code="))
         assertTrue(location, location.endsWith("&state=xyz"))
         val code = location.substringAfter("code=").substringBefore('&')

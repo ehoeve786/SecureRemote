@@ -35,7 +35,7 @@ jobs:
         run: set -o pipefail; gradle testDebugUnitTest --no-daemon --continue 2>&1 | tee test.log
       - if: failure()
         run: |
-          grep -E 'FAILED|tests completed|What went wrong' -A4 test.log | head -80 | sed 's/^/::error::/'
+          grep -E '^e: |FAILED|tests completed|What went wrong' -A4 test.log | head -80 | sed 's/^/::error::/'
       - name: Signing key
         env: { KS: "${{ secrets.SIGNING_KEYSTORE }}" }
         run: |
