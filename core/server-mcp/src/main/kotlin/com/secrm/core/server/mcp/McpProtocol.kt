@@ -48,8 +48,10 @@ object McpProtocol {
         session: Session,
         dispatcher: CallDispatcher
     ): String? {
-        val root = runCatching { Json.parseToJsonElement(body).jsonObject }.getOrNull()
+        val parsed = runCatching { Json.parseToJsonElement(body) }.getOrNull()
             ?: return errorResponse(JsonNull, -32700, "Parse error")
+        // Batch arrays are valid JSON-RPC but not supported here: reject them as an invalid request.
+        val root = parsed as? JsonObject ?: return errorResponse(JsonNull, -32600, "Batch requests are not supported")
         val id = root["id"]
         val method = (root["method"] as? JsonPrimitive)?.contentOrNull
             ?: return errorResponse(id, -32600, "Invalid request")

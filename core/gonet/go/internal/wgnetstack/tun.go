@@ -481,7 +481,11 @@ func (pc *PingConn) SetDeadline(t time.Time) error {
 }
 
 func (pc *PingConn) SetReadDeadline(t time.Time) error {
-	pc.deadline.Reset(time.Until(t))
+	// A zero time means no deadline; Reset(time.Until(zero)) would expire at once.
+	pc.deadline.Stop()
+	if !t.IsZero() {
+		pc.deadline.Reset(time.Until(t))
+	}
 	return nil
 }
 
