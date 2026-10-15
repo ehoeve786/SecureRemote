@@ -13,6 +13,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -42,37 +46,28 @@ fun KeyManagementScreen(app: SecureRemoteApp, onBack: (() -> Unit)? = null) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("SSH Keys", style = SecrmType.Title, color = Palette.TextPrimary) },
+                title = { Column { Text("Keys", style = MaterialTheme.typography.titleLarge); Text("${keys.size} stored in the Android Keystore", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) } },
                 navigationIcon = {
                     if (onBack != null) IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Rounded.KeyboardArrowLeft, "Back", tint = Palette.TextSecondary)
+                        Icon(Icons.AutoMirrored.Rounded.KeyboardArrowLeft, "Back", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Palette.Void)
             )
         },
-        containerColor = Palette.Void,
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = { editing = null; showImport = true },
-                text = { Text("Import key", fontWeight = FontWeight.Medium) },
+                text = { Text("Import key") },
                 icon = { Icon(Icons.Rounded.Add, null) }
             )
         }
     ) { padding ->
         if (keys.isEmpty()) {
-            Column(
-                Modifier.fillMaxSize().padding(padding).padding(Space.xl),
-                verticalArrangement = Arrangement.Center,
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text("No keys yet", style = SecrmType.Title, color = Palette.TextPrimary)
-                Spacer(Modifier.height(Space.sm))
-                Text(
-                    "Import an OpenSSH private key by pasting it or picking a file. " +
-                    "Keys are stored in the Android Keystore and shared across all connections.",
-                    style = SecrmType.Body, color = Palette.TextSecondary,
-                    modifier = Modifier.padding(horizontal = Space.xl)
+            Box(Modifier.fillMaxSize().padding(padding)) {
+                com.secrm.ui.common.StateMessage(
+                    SecrmIcons.Key, "No keys yet",
+                    "Import an OpenSSH private key by pasting it or picking a file. Keys are stored in the Android Keystore and shared by all hosts.",
+                    action = "Import key" to { editing = null; showImport = true },
                 )
             }
         } else {
@@ -130,54 +125,39 @@ private fun KeyRow(
     onDelete: () -> Unit
 ) {
     var showMenu by remember { mutableStateOf(false) }
-    Row(
-        Modifier.fillMaxWidth()
-            .clip(RoundedCornerShape(Space.cardRadius))
-            .background(Palette.Surface1)
-            .padding(Space.lg),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(key.name, style = SecrmType.Body.copy(fontWeight = FontWeight.Medium),
-                color = Palette.TextPrimary)
-            Text(key.algorithm, style = SecrmType.MonoSmall, color = Palette.TextSecondary)
-            if (key.publicKey.isNotBlank()) {
-                Text(
-                    key.publicKey.take(60) + "…",
-                    style = SecrmType.MonoSmall, color = Palette.TextTertiary,
-                    maxLines = 1
-                )
+    var confirmDelete by remember { mutableStateOf(false) }
+    val s = MaterialTheme.colorScheme
+    ElevatedCard(Modifier.fillMaxWidth(), colors = CardDefaults.elevatedCardColors(containerColor = s.surfaceContainerLow)) {
+        Row(Modifier.padding(Space.lg), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(44.dp).background(s.tertiaryContainer, CircleShape), contentAlignment = Alignment.Center) {
+                Icon(SecrmIcons.Key, null, tint = s.onTertiaryContainer)
             }
-            if (key.passphrase.isNotBlank()) {
-                Text("passphrase protected", style = SecrmType.Caption, color = Palette.Warning)
-            }
-        }
-        Box {
-            Text("⋮", style = SecrmType.Title, color = Palette.TextSecondary,
-                modifier = Modifier.padding(horizontal = Space.sm)
-                    .tappable { showMenu = true })
-            DropdownMenu(
-                expanded = showMenu,
-                onDismissRequest = { showMenu = false },
-                containerColor = Palette.Surface2
-            ) {
-                if (key.publicKey.isNotBlank()) {
-                    DropdownMenuItem(
-                        text = { Text("Copy public key", color = Palette.TextPrimary) },
-                        onClick = { showMenu = false; onCopyPublic() }
-                    )
+            Spacer(Modifier.width(Space.md))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Space.xs)) {
+                Text(key.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                    Tag(key.algorithm)
+                    if (key.passphrase.isNotBlank()) Tag("Passphrase", container = MaterialTheme.status.warning.copy(alpha = 0.16f), content = MaterialTheme.status.warning)
                 }
-                DropdownMenuItem(
-                    text = { Text("Edit", color = Palette.TextPrimary) },
-                    onClick = { showMenu = false; onEdit() }
-                )
-                DropdownMenuItem(
-                    text = { Text("Delete", color = Palette.Danger) },
-                    onClick = { showMenu = false; onDelete() }
-                )
+                if (key.publicKey.isNotBlank()) Text(key.publicKey.take(48) + "…", style = MaterialTheme.mono, color = s.onSurfaceVariant, maxLines = 1)
+            }
+            Box {
+                IconButton({ showMenu = true }) { Icon(Icons.Rounded.MoreVert, "More") }
+                DropdownMenu(showMenu, { showMenu = false }) {
+                    if (key.publicKey.isNotBlank()) DropdownMenuItem(text = { Text("Copy public key") }, onClick = { showMenu = false; onCopyPublic() })
+                    DropdownMenuItem(text = { Text("Edit") }, onClick = { showMenu = false; onEdit() })
+                    DropdownMenuItem(text = { Text("Delete", color = s.error) }, onClick = { showMenu = false; confirmDelete = true })
+                }
             }
         }
     }
+    if (confirmDelete) AlertDialog(
+        onDismissRequest = { confirmDelete = false },
+        title = { Text("Delete ${key.name}?") },
+        text = { Text("Hosts using this key will need another way to sign in.") },
+        confirmButton = { TextButton({ confirmDelete = false; onDelete() }) { Text("Delete", color = s.error) } },
+        dismissButton = { TextButton({ confirmDelete = false }) { Text("Cancel") } },
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -228,7 +208,7 @@ private fun KeyImportSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        containerColor = Palette.Surface1
+        
     ) {
         Column(
             Modifier.fillMaxWidth()
@@ -238,7 +218,7 @@ private fun KeyImportSheet(
         ) {
             Text(
                 if (initial == null) "Import SSH key" else "Edit key metadata",
-                style = SecrmType.Title, color = Palette.TextPrimary
+                style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface
             )
             OutlinedTextField(name, { name = it },
                 label = { Text("Name") }, singleLine = true,
@@ -246,7 +226,7 @@ private fun KeyImportSheet(
                 modifier = Modifier.fillMaxWidth())
 
             if (initial == null) {
-                Text("Private key", style = SecrmType.Caption, color = Palette.TextSecondary)
+                Text("Private key", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 OutlinedTextField(pem, { pem = it },
                     label = { Text("Paste PEM") },
                     placeholder = { Text("-----BEGIN OPENSSH PRIVATE KEY-----") },

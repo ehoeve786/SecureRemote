@@ -9,6 +9,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -38,16 +39,14 @@ fun ServerControlScreen(app: SecureRemoteApp, onBack: (() -> Unit)? = null) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Settings", style = SecrmType.Title, color = Palette.TextPrimary) },
+                title = { Text("Settings", style = MaterialTheme.typography.titleLarge) },
                 navigationIcon = {
                     if (onBack != null) IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Rounded.KeyboardArrowLeft, "Back", tint = Palette.TextSecondary)
+                        Icon(Icons.AutoMirrored.Rounded.KeyboardArrowLeft, "Back", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Palette.Void)
             )
         },
-        containerColor = Palette.Void
     ) { padding ->
         LazyColumn(
             Modifier.fillMaxSize().padding(padding),
@@ -59,20 +58,20 @@ fun ServerControlScreen(app: SecureRemoteApp, onBack: (() -> Unit)? = null) {
             ),
             verticalArrangement = Arrangement.spacedBy(Space.lg)
         ) {
-            item { SectionLabel("APPEARANCE") }
+            item { SectionHeader("Appearance") }
             item { AppearanceSection(app.ui) }
 
-            item { SectionLabel("PRIVATE NETWORK") }
+            item { SectionHeader("Private network") }
             item { TailscaleSection(app) }
             item { WireGuardSection(app) }
 
-            item { SectionLabel("SSH AGENT") }
+            item { SectionHeader("SSH agent") }
             item { AgentEntryCard(onOpen = { showAgent = true }) }
 
-            item { SectionLabel("MCP SERVER") }
+            item { SectionHeader("MCP server") }
             item { McpSection(app) }
 
-            item { SectionLabel("ABOUT") }
+            item { SectionHeader("About") }
             item { AboutSection() }
         }
     }
@@ -104,16 +103,6 @@ private fun AppearanceSection(ui: com.secrm.data.UiPrefs) {
     }
 }
 
-@Composable
-private fun SectionLabel(text: String) {
-    Text(
-        text,
-        style = SecrmType.Caption.copy(fontWeight = FontWeight.Medium),
-        color = Palette.TextTertiary,
-        modifier = Modifier.padding(top = Space.sm)
-    )
-}
-
 // ── Private network ───────────────────────────────────
 
 @Composable
@@ -132,15 +121,15 @@ private fun TailscaleSection(app: SecureRemoteApp) {
                 uri.openUri((st as Tunnel.State.NeedsAuth).url)
             }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Public (Funnel) for claude.ai", style = SecrmType.Body,
-                color = Palette.TextPrimary, modifier = Modifier.weight(1f))
+            Text("Public (Funnel) for claude.ai", style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
             // Funnel forwards to the MCP server, so it must be running.
             Switch(public, { public = it; ts.public = it; if (it) McpServerService.start(ctx) })
         }
-        if (public) ts.funnelProblem?.let { Text(it, style = SecrmType.Caption, color = Palette.Warning) }
+        if (public) ts.funnelProblem?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.status.warning) }
         (st as? Tunnel.State.Up)?.takeIf { public && ts.funnelProblem == null }?.let { up ->
             val url = "https://${up.name}/mcp"
-            Text(url, style = SecrmType.MonoSmall, color = Palette.TextPrimary)
+            Text(url, style = MaterialTheme.mono, color = MaterialTheme.colorScheme.onSurface)
             PillButton("Copy MCP URL", PillStyle.Primary, Modifier.fillMaxWidth()) {
                 (ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
                     .setPrimaryClip(ClipData.newPlainText("MCP URL", url))
@@ -171,8 +160,8 @@ private fun WireGuardSection(app: SecureRemoteApp) {
     ) {
         if (configured) {
             wg.publicKey?.let { key ->
-                Text("Phone public key", style = SecrmType.Caption, color = Palette.TextSecondary)
-                Text(key, style = SecrmType.MonoSmall, color = Palette.TextPrimary)
+                Text("Phone public key", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(key, style = MaterialTheme.mono, color = MaterialTheme.colorScheme.onSurface)
                 PillButton("Copy public key", PillStyle.Ghost, Modifier.fillMaxWidth()) {
                     (ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
                         .setPrimaryClip(ClipData.newPlainText("wg public key", key))
@@ -188,7 +177,7 @@ private fun WireGuardSection(app: SecureRemoteApp) {
                 problem = wg.configure(config)
                 if (problem == null) { configured = true; config = "" }
             }
-            problem?.let { Text(it, style = SecrmType.Caption, color = Palette.Danger) }
+            problem?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
         }
     }
 }
@@ -198,27 +187,27 @@ private fun NetworkCard(title: String, st: Tunnel.State, blurb: String, content:
     GlassCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(Space.lg), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(title, style = SecrmType.Body.copy(fontWeight = FontWeight.Medium),
-                    color = Palette.TextPrimary, modifier = Modifier.weight(1f))
-                StatusDot(when (st) {
-                    is Tunnel.State.Up -> ConnectionVisual.Up
-                    is Tunnel.State.Starting -> ConnectionVisual.Connecting
-                    is Tunnel.State.NeedsAuth -> ConnectionVisual.Warning
-                    is Tunnel.State.Failed -> ConnectionVisual.Error
-                    Tunnel.State.Idle -> ConnectionVisual.Idle
-                })
-                Spacer(Modifier.width(Space.sm))
-                Text(when (st) {
-                    is Tunnel.State.Up -> "Connected"
-                    is Tunnel.State.Starting -> "Connecting…"
-                    is Tunnel.State.NeedsAuth -> "Sign-in needed"
-                    is Tunnel.State.Failed -> "Error"
-                    Tunnel.State.Idle -> "Off"
-                }, style = SecrmType.Label, color = Palette.TextSecondary)
+                Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                StatusPill(
+                    when (st) {
+                        is Tunnel.State.Up -> ConnectionVisual.Up
+                        is Tunnel.State.Starting -> ConnectionVisual.Connecting
+                        is Tunnel.State.NeedsAuth -> ConnectionVisual.Warning
+                        is Tunnel.State.Failed -> ConnectionVisual.Error
+                        Tunnel.State.Idle -> ConnectionVisual.Idle
+                    },
+                    when (st) {
+                        is Tunnel.State.Up -> "Connected"
+                        is Tunnel.State.Starting -> "Connecting…"
+                        is Tunnel.State.NeedsAuth -> "Sign-in needed"
+                        is Tunnel.State.Failed -> "Error"
+                        Tunnel.State.Idle -> "Off"
+                    },
+                )
             }
-            Text(blurb, style = SecrmType.Caption, color = Palette.TextSecondary)
-            if (st is Tunnel.State.Up) Text("${st.name} · ${st.address}", style = SecrmType.MonoSmall, color = Palette.TextSecondary)
-            if (st is Tunnel.State.Failed) Text(st.reason, style = SecrmType.MonoSmall, color = Palette.Danger)
+            Text(blurb, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (st is Tunnel.State.Up) Text("${st.name} · ${st.address}", style = MaterialTheme.mono, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (st is Tunnel.State.Failed) Text(st.reason, style = MaterialTheme.mono, color = MaterialTheme.colorScheme.error)
             content()
         }
     }
@@ -242,18 +231,13 @@ private fun McpSection(app: SecureRemoteApp) {
     GlassCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(Space.lg)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("MCP Server", style = SecrmType.Body.copy(fontWeight = FontWeight.Medium),
-                    color = Palette.TextPrimary)
-                Spacer(Modifier.weight(1f))
-                StatusDot(if (running) ConnectionVisual.Up else ConnectionVisual.Idle)
-                Spacer(Modifier.width(Space.sm))
-                Text(if (running) "Running" else "Stopped",
-                    style = SecrmType.Label, color = Palette.TextSecondary)
+                Text("MCP server", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                StatusPill(if (running) ConnectionVisual.Up else ConnectionVisual.Idle, if (running) "Running" else "Stopped")
             }
             Spacer(Modifier.height(Space.xs))
             Text(
                 "Expose your saved SSH connections to Claude and other MCP clients.",
-                style = SecrmType.Body, color = Palette.TextSecondary
+                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
             Spacer(Modifier.height(Space.md))
@@ -271,8 +255,8 @@ private fun McpSection(app: SecureRemoteApp) {
             val ts by app.tailscale.state.collectAsState()
             (ts as? com.secrm.core.tunnel.Tunnel.State.Up)?.takeIf { app.tailscale.public }?.let {
                 Spacer(Modifier.height(Space.md))
-                Text("Claude connector URL", style = SecrmType.Caption, color = Palette.TextSecondary)
-                Text("https://${it.name}/mcp", style = SecrmType.MonoSmall, color = Palette.TextPrimary)
+                Text("Claude connector URL", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("https://${it.name}/mcp", style = MaterialTheme.mono, color = MaterialTheme.colorScheme.onSurface)
             }
             var pairing by remember { mutableStateOf<String?>(null) }
             Spacer(Modifier.height(Space.md))
@@ -281,8 +265,8 @@ private fun McpSection(app: SecureRemoteApp) {
                 PillButton("Disconnect Claude", PillStyle.Ghost, Modifier.weight(1f)) { app.oauth.revokeAll(); pairing = null }
             }
             pairing?.let {
-                Text("Pairing code (10 min, single use)", style = SecrmType.Caption, color = Palette.TextSecondary)
-                Text(it, style = SecrmType.Title, color = Palette.TextPrimary)
+                Text("Pairing code (10 min, single use)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(it, style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface)
             }
 
             Spacer(Modifier.height(Space.md))
@@ -291,27 +275,27 @@ private fun McpSection(app: SecureRemoteApp) {
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Setup instructions", style = SecrmType.Caption, color = Palette.TextSecondary)
+                Text("Setup instructions", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 TextButton(onClick = { expanded = !expanded }) {
-                    Text(if (expanded) "Hide" else "Show", color = Palette.Indigo)
+                    Text(if (expanded) "Hide" else "Show", color = MaterialTheme.colorScheme.primary)
                 }
             }
 
             if (expanded) {
                 Spacer(Modifier.height(Space.sm))
-                Text("Endpoints", style = SecrmType.Label,
-                    color = Palette.TextPrimary, fontWeight = FontWeight.Medium)
+                Text("Endpoints", style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Medium)
                 Text(
                     "Local    http://127.0.0.1:7823/mcp\n" +
                     "Remote   http://127.0.0.1:7824/mcp   (forward this one)",
-                    style = SecrmType.MonoSmall, color = Palette.TextPrimary
+                    style = MaterialTheme.mono, color = MaterialTheme.colorScheme.onSurface
                 )
 
                 Spacer(Modifier.height(Space.md))
-                Text("Bearer token", style = SecrmType.Label,
-                    color = Palette.TextPrimary, fontWeight = FontWeight.Medium)
+                Text("Bearer token", style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Medium)
                 Text(bearer.ifBlank { "(generated on first start)" },
-                    style = SecrmType.MonoSmall, color = Palette.TextPrimary)
+                    style = MaterialTheme.mono, color = MaterialTheme.colorScheme.onSurface)
                 if (bearer.isNotBlank()) {
                     Spacer(Modifier.height(Space.xs))
                     PillButton("Copy token", PillStyle.Ghost, Modifier.fillMaxWidth()) {
@@ -322,12 +306,12 @@ private fun McpSection(app: SecureRemoteApp) {
 
                 Spacer(Modifier.height(Space.md))
                 Card(
-                    colors = CardDefaults.cardColors(containerColor = Palette.Surface2),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(Modifier.padding(Space.md), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
                         Text("Connect from Claude",
-                            style = SecrmType.Label, color = Palette.TextPrimary,
+                            style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurface,
                             fontWeight = FontWeight.Medium)
                         Text(
                             "1.  Start the server, connect Tailscale and turn on Public (Funnel).\n" +
@@ -337,7 +321,7 @@ private fun McpSection(app: SecureRemoteApp) {
                             "Claude's servers reach the phone from the internet, so Funnel is\n" +
                             "needed; your servers stay private and are reached through each\n" +
                             "connection's Route through setting.",
-                            style = SecrmType.Body, color = Palette.TextPrimary
+                            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface
                         )
                     }
                 }
@@ -346,7 +330,7 @@ private fun McpSection(app: SecureRemoteApp) {
                 Text(
                     "Tip: gate each connection’s MCP exposure in its edit sheet. " +
                     "Read-only boxes should have ssh.exec turned off so agents cannot change state.",
-                    style = SecrmType.Caption, color = Palette.TextTertiary
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                 )
             }
         }
@@ -360,14 +344,14 @@ private fun AboutSection() {
     GlassCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(Space.lg)) {
             Text("Secure Remote Manager",
-                style = SecrmType.Body.copy(fontWeight = FontWeight.Medium),
-                color = Palette.TextPrimary)
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurface)
             Text("Version 1.0.0 · debug build",
-                style = SecrmType.Caption, color = Palette.TextSecondary)
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(Space.sm))
             Text(
                 "Local-first. No telemetry. Credentials stored in Android Keystore.",
-                style = SecrmType.Caption, color = Palette.TextTertiary
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
             )
         }
     }
@@ -375,21 +359,26 @@ private fun AboutSection() {
 
 @Composable
 private fun AgentEntryCard(onOpen: () -> Unit) {
-    GlassCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(Space.lg)) {
-            Text("Bitwarden",
-                style = SecrmType.Body.copy(fontWeight = FontWeight.Medium),
-                color = Palette.TextPrimary)
-            Spacer(Modifier.height(Space.xs))
-            Text(
-                "Use SSH keys stored in your Bitwarden vault. Unlocks with " +
-                "fingerprint; keys stay in memory only.",
-                style = SecrmType.Body, color = Palette.TextSecondary
-            )
-            Spacer(Modifier.height(Space.md))
-            PillButton("Open", PillStyle.Primary, Modifier.fillMaxWidth()) { onOpen() }
-        }
+    Card(
+        onClick = onOpen,
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        ListItem(
+            headlineContent = { Text("Bitwarden", style = MaterialTheme.typography.titleMedium) },
+            supportingContent = { Text("Use SSH keys from your vault. Unlocks with your fingerprint; keys stay in memory only.") },
+            leadingContent = {
+                Box(Modifier.size(44.dp).background(MaterialTheme.colorScheme.secondaryContainer, androidx.compose.foundation.shape.CircleShape), contentAlignment = Alignment.Center) {
+                    Icon(SecrmIcons.Key, null, tint = MaterialTheme.colorScheme.onSecondaryContainer)
+                }
+            },
+            trailingContent = { Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null) },
+            colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
+        )
     }
+
 }
 
 

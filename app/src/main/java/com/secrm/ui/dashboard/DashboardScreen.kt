@@ -12,6 +12,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -38,7 +41,8 @@ import kotlinx.coroutines.launch
 @Composable
 fun DashboardScreen(
     app: SecureRemoteApp,
-    onOpenShell: () -> Unit
+    onOpenShell: () -> Unit,
+    onOpenFiles: () -> Unit,
 ) {
     val sshState by app.ssh.state.collectAsState()
     val scope = rememberCoroutineScope()
@@ -60,21 +64,19 @@ fun DashboardScreen(
             TopAppBar(
                 title = {
                     Column {
-                        Text("Connections", style = SecrmType.Title, color = Palette.TextPrimary)
+                        Text("Hosts", style = MaterialTheme.typography.titleLarge)
                         Text(
-                            "${connections.size} saved · ${if (sshState is SshState.Connected) "1 active" else "idle"}",
-                            style = SecrmType.Caption, color = Palette.TextSecondary
+                            "${connections.size} saved · ${if (sshState is SshState.Connected) "1 connected" else "none connected"}",
+                            style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Palette.Void)
             )
         },
-        containerColor = Palette.Void,
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = { editing = null; showForm = true },
-                text = { Text("New connection", fontWeight = FontWeight.Medium) },
+                text = { Text("Add host") },
                 icon = { Icon(Icons.Rounded.Add, null) }
             )
         }
@@ -83,22 +85,13 @@ fun DashboardScreen(
             Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .background(Palette.Void)
         ) {
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .height(320.dp)
-                    .background(
-                        Brush.radialGradient(
-                            colors = listOf(Palette.IndigoGlow.copy(alpha = 0.12f), Color.Transparent),
-                            radius = 700f
-                        )
-                    )
-            )
-
             if (connections.isEmpty()) {
-                EmptyState(onAdd = { editing = null; showForm = true })
+                com.secrm.ui.common.StateMessage(
+                    SecrmIcons.Dns, "No hosts yet",
+                    "Save an SSH host to connect, open a terminal and browse its files. To reach it away from home, set up Tailscale in Settings first.",
+                    action = "Add host" to { editing = null; showForm = true },
+                )
             } else {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
@@ -113,41 +106,17 @@ fun DashboardScreen(
                     // Connection error banner
                     connectError?.let { err ->
                         item {
-                            Row(
-                                Modifier.fillMaxWidth()
-                                    .clip(RoundedCornerShape(Space.cardRadius))
-                                    .background(Palette.Danger.copy(alpha = 0.15f))
-                                    .padding(Space.lg),
-                                verticalAlignment = Alignment.CenterVertically
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer, contentColor = MaterialTheme.colorScheme.onErrorContainer),
+                                modifier = Modifier.fillMaxWidth(),
                             ) {
-                                Column(Modifier.weight(1f)) {
-                                    Text("Connection failed",
-                                        style = SecrmType.Body.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Medium),
-                                        color = Palette.Danger)
-                                    Text(err.take(200),
-                                        style = SecrmType.MonoSmall,
-                                        color = Palette.TextSecondary)
-                                }
-                                androidx.compose.material3.TextButton(onClick = { connectError = null }) {
-                                    Text("Dismiss", color = Palette.TextSecondary)
+                                Column(Modifier.padding(Space.lg), verticalArrangement = Arrangement.spacedBy(Space.xs)) {
+                                    Text("Couldn't connect", style = MaterialTheme.typography.titleSmall)
+                                    Text(err.take(240), style = MaterialTheme.mono)
+                                    TextButton({ connectError = null }, Modifier.align(Alignment.End)) { Text("Dismiss") }
                                 }
                             }
                         }
-                        item { Spacer(Modifier.height(Space.sm)) }
-                    }
-
-                    // Active session banner
-                    if (sshState is SshState.Connected && activeName != null) {
-                        item { ActiveBanner(
-                            name = activeName ?: "",
-                            serverVersion = (sshState as SshState.Connected).serverVersion,
-                            onShell = onOpenShell,
-                            onDisconnect = {
-                                scope.launch { app.ssh.disconnect() }
-                                activeName = null
-                            }
-                        ) }
-                        item { Spacer(Modifier.height(Space.sm)) }
                     }
 
                     items(connections, key = { it.name }) { conn ->
@@ -162,6 +131,7 @@ fun DashboardScreen(
                                 ConnectionVisual.Error
                             else ConnectionVisual.Idle,
                             isActive = activeName == conn.name && sshState is SshState.Connected,
+                            serverVersion = (sshState as? SshState.Connected)?.serverVersion.takeIf { activeName == conn.name },
                             onConnect = {
                                 scope.launch {
                                     connectError = null
@@ -211,6 +181,8 @@ fun DashboardScreen(
                                 }
                             },
                             onShell = onOpenShell,
+                            onFiles = onOpenFiles,
+                            onDisconnect = { scope.launch { app.ssh.disconnect() }; activeName = null },
                             onEdit = { editing = conn; showForm = true },
                             onDelete = {
                                 app.connections.delete(conn.name)
@@ -243,113 +215,90 @@ fun DashboardScreen(
 }
 
 @Composable
-private fun EmptyState(onAdd: () -> Unit) {
-    Column(
-        Modifier.fillMaxSize().padding(Space.xl),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text("No connections yet", style = SecrmType.Title, color = Palette.TextPrimary)
-        Spacer(Modifier.height(Space.sm))
-        Text(
-            "Add an SSH connection to get started. If you're using Tailscale, configure it first in Settings.",
-            style = SecrmType.Body, color = Palette.TextSecondary,
-            modifier = Modifier.padding(horizontal = Space.xl)
-        )
-    }
-}
-
-@Composable
-private fun ActiveBanner(
-    name: String,
-    serverVersion: String,
-    onShell: () -> Unit,
-    onDisconnect: () -> Unit
-) {
-    Row(
-        Modifier.fillMaxWidth()
-            .clip(RoundedCornerShape(Space.cardRadius))
-            .background(Palette.Indigo.copy(alpha = 0.12f))
-            .padding(Space.lg),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        StatusDot(ConnectionVisual.Up)
-        Spacer(Modifier.width(Space.md))
-        Column(Modifier.weight(1f)) {
-            Text("Connected to $name", style = SecrmType.Body.copy(fontWeight = FontWeight.Medium),
-                color = Palette.TextPrimary)
-            Text(serverVersion.take(40), style = SecrmType.MonoSmall, color = Palette.TextSecondary)
-        }
-        TextButton(onClick = onShell) {
-            Text("Shell", color = Palette.Indigo, fontWeight = FontWeight.Medium)
-        }
-        TextButton(onClick = onDisconnect) {
-            Text("Disconnect", color = Palette.Danger)
-        }
-    }
-}
-
-@Composable
 private fun ConnectionCard(
     conn: SavedConnection,
-    isConnecting: Boolean = false,
+    isConnecting: Boolean,
     state: ConnectionVisual,
     isActive: Boolean,
+    serverVersion: String?,
     onConnect: () -> Unit,
     onShell: () -> Unit,
+    onFiles: () -> Unit,
+    onDisconnect: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
     var showMenu by remember { mutableStateOf(false) }
+    var confirmDelete by remember { mutableStateOf(false) }
+    val s = MaterialTheme.colorScheme
+    val visual = if (isConnecting) ConnectionVisual.Connecting else state
 
-    Row(
-        Modifier.fillMaxWidth()
-            .clip(RoundedCornerShape(Space.cardRadius))
-            .background(Palette.Surface1)
-            .tappable { if (isActive) onShell() else onConnect() }
-            .padding(Space.lg),
-        verticalAlignment = Alignment.CenterVertically
+    ElevatedCard(
+        onClick = { if (isActive) onShell() else if (!isConnecting) onConnect() },
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.elevatedCardColors(containerColor = if (isActive) s.primaryContainer else s.surfaceContainerLow),
     ) {
-        StatusDot(if (isConnecting) ConnectionVisual.Connecting else state)
-        Spacer(Modifier.width(Space.md))
-        Column(Modifier.weight(1f)) {
-            Text(conn.name, style = SecrmType.Body.copy(fontWeight = FontWeight.Medium),
-                color = Palette.TextPrimary)
-            Text("${conn.user}@${conn.host}:${conn.port}",
-                style = SecrmType.MonoSmall, color = Palette.TextSecondary)
-            if (!conn.allowMcpExec && !conn.allowMcpRead) {
-                Text("hidden from MCP", style = SecrmType.Caption, color = Palette.TextTertiary)
-            } else if (conn.allowMcpExec) {
-                Text("MCP: exec", style = SecrmType.Caption, color = Palette.Indigo)
-            } else if (conn.allowMcpRead) {
-                Text("MCP: read-only", style = SecrmType.Caption, color = Palette.Indigo)
+        Column(Modifier.padding(Space.lg), verticalArrangement = Arrangement.spacedBy(Space.md)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier.size(48.dp).background(if (isActive) s.primary else s.secondaryContainer, CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(SecrmIcons.Dns, null, tint = if (isActive) s.onPrimary else s.onSecondaryContainer)
+                }
+                Spacer(Modifier.width(Space.md))
+                Column(Modifier.weight(1f)) {
+                    Text(conn.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text("${conn.user}@${conn.host}:${conn.port}", style = MaterialTheme.mono,
+                        color = if (isActive) s.onPrimaryContainer else s.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                StatusPill(visual, when (visual) {
+                    ConnectionVisual.Up -> "Connected"
+                    ConnectionVisual.Connecting -> "Connecting"
+                    ConnectionVisual.Error -> "Failed"
+                    else -> "Offline"
+                })
+                Box {
+                    IconButton({ showMenu = true }) { Icon(Icons.Rounded.MoreVert, "More") }
+                    DropdownMenu(showMenu, { showMenu = false }) {
+                        DropdownMenuItem(text = { Text("Edit") }, onClick = { showMenu = false; onEdit() })
+                        DropdownMenuItem(text = { Text("Delete", color = s.error) }, onClick = { showMenu = false; confirmDelete = true })
+                    }
+                }
             }
-        }
-        Box {
-            Text(
-                "⋮",
-                style = SecrmType.Title,
-                color = Palette.TextSecondary,
-                modifier = Modifier
-                    .padding(horizontal = Space.sm)
-                    .tappable { showMenu = true }
-            )
-            DropdownMenu(
-                expanded = showMenu,
-                onDismissRequest = { showMenu = false },
-                containerColor = Palette.Surface2
-            ) {
-                DropdownMenuItem(
-                    text = { Text("Edit", color = Palette.TextPrimary) },
-                    onClick = { showMenu = false; onEdit() }
-                )
-                DropdownMenuItem(
-                    text = { Text("Delete", color = Palette.Danger) },
-                    onClick = { showMenu = false; onDelete() }
-                )
+            if (serverVersion != null) Text(serverVersion.take(60), style = MaterialTheme.mono, color = s.onPrimaryContainer.copy(alpha = 0.8f))
+            Row(horizontalArrangement = Arrangement.spacedBy(Space.sm), verticalAlignment = Alignment.CenterVertically) {
+                val tagBg = if (isActive) s.surface.copy(alpha = 0.5f) else s.surfaceContainerHighest
+                Tag(when (conn.via) { "tailscale" -> "Tailscale"; "wireguard" -> "WireGuard"; else -> "Direct" }, container = tagBg)
+                Tag(when (conn.authMethod) { AuthMethod.PASSWORD -> "Password"; AuthMethod.SAVED_KEY -> "Key"; AuthMethod.AGENT -> "Bitwarden" }, container = tagBg)
+                Tag(when {
+                    conn.allowMcpExec -> "MCP exec"
+                    conn.allowMcpRead -> "MCP read-only"
+                    else -> "Hidden from MCP"
+                }, container = tagBg)
+            }
+            if (isActive) {
+                Row(horizontalArrangement = Arrangement.spacedBy(Space.sm), verticalAlignment = Alignment.CenterVertically) {
+                    Button(onShell) { Icon(SecrmIcons.Terminal, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Terminal") }
+                    FilledTonalButton(onFiles) { Icon(SecrmIcons.Folder, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Files") }
+                    Spacer(Modifier.weight(1f))
+                    TextButton(onDisconnect) { Text("Disconnect", color = s.error) }
+                }
+            } else {
+                FilledTonalButton(onConnect, enabled = !isConnecting, modifier = Modifier.fillMaxWidth()) {
+                    if (isConnecting) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    else Text("Connect")
+                }
             }
         }
     }
+    if (confirmDelete) AlertDialog(
+        onDismissRequest = { confirmDelete = false },
+        title = { Text("Delete ${conn.name}?") },
+        text = { Text("The saved host is removed from this phone. Its keys stay in the Keys tab.") },
+        confirmButton = { TextButton({ confirmDelete = false; onDelete() }) { Text("Delete", color = s.error) } },
+        dismissButton = { TextButton({ confirmDelete = false }) { Text("Cancel") } },
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -386,7 +335,7 @@ private fun ConnectionFormSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        containerColor = Palette.Surface1
+        
     ) {
         Column(
             Modifier.fillMaxWidth()
@@ -397,7 +346,7 @@ private fun ConnectionFormSheet(
         ) {
             Text(
                 if (initial == null) "New connection" else "Edit connection",
-                style = SecrmType.Title, color = Palette.TextPrimary
+                style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface
             )
             OutlinedTextField(name, { name = it },
                 label = { Text("Name") }, singleLine = true,
@@ -414,22 +363,11 @@ private fun ConnectionFormSheet(
                 modifier = Modifier.fillMaxWidth())
 
             // ── Auth selector ────────────────────────────────
-            Text("Authentication", style = SecrmType.Caption, color = Palette.TextSecondary)
-            Row(
-                Modifier.fillMaxWidth()
-                    .clip(RoundedCornerShape(Space.pillRadius))
-                    .background(Palette.Surface2)
-                    .padding(4.dp),
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                AuthTab("Password", authMethod == AuthMethod.PASSWORD, Modifier.weight(1f)) {
-                    pick(AuthMethod.PASSWORD)
-                }
-                AuthTab("Key", authMethod == AuthMethod.SAVED_KEY, Modifier.weight(1f)) {
-                    pick(AuthMethod.SAVED_KEY)
-                }
-                AuthTab("Bitwarden", authMethod == AuthMethod.AGENT, Modifier.weight(1f)) {
-                    pick(AuthMethod.AGENT)
+            Text("Authentication", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            val authOptions = listOf(AuthMethod.PASSWORD to "Password", AuthMethod.SAVED_KEY to "Key", AuthMethod.AGENT to "Bitwarden")
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                authOptions.forEachIndexed { i, (m, label) ->
+                    SegmentedButton(authMethod == m, { pick(m) }, SegmentedButtonDefaults.itemShape(i, authOptions.size)) { Text(label) }
                 }
             }
 
@@ -452,7 +390,7 @@ private fun ConnectionFormSheet(
                                 bwKeys == null -> "Bitwarden is locked."
                                 else -> "No SSH keys in your Bitwarden vault."
                             },
-                            style = SecrmType.Caption, color = Palette.Warning
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.status.warning
                         )
                         if (authMethod == AuthMethod.AGENT && app.vault.isConfigured && bwKeys == null)
                             PillButton("Unlock Bitwarden", PillStyle.Primary, Modifier.fillMaxWidth()) {
@@ -469,16 +407,16 @@ private fun ConnectionFormSheet(
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Text(options.firstOrNull { it.first == keyId }?.second ?: "Select key…",
-                                    color = Palette.TextPrimary)
+                                    color = MaterialTheme.colorScheme.onSurface)
                             }
                             DropdownMenu(
                                 expanded = expanded,
                                 onDismissRequest = { expanded = false },
-                                containerColor = Palette.Surface2
+                                containerColor = MaterialTheme.colorScheme.surfaceContainer
                             ) {
                                 options.forEach { (id, label) ->
                                     DropdownMenuItem(
-                                        text = { Text(label, color = Palette.TextPrimary) },
+                                        text = { Text(label, color = MaterialTheme.colorScheme.onSurface) },
                                         onClick = { keyId = id; expanded = false }
                                     )
                                 }
@@ -489,30 +427,28 @@ private fun ConnectionFormSheet(
             }
 
             // ── Route through (as in Tidegate) ──────────────
-            Text("Route through", style = SecrmType.Caption, color = Palette.TextSecondary)
-            Row(
-                Modifier.fillMaxWidth()
-                    .clip(RoundedCornerShape(Space.pillRadius))
-                    .background(Palette.Surface2)
-                    .padding(4.dp),
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                listOf(null to "Direct", "tailscale" to "Tailscale", "wireguard" to "WireGuard").forEach { (v, label) ->
-                    AuthTab(label, via == v, Modifier.weight(1f)) { via = v }
+            Text("Route through", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            val routes = listOf<String?>(null, "tailscale", "wireguard")
+            val routeNames = listOf("Direct", "Tailscale", "WireGuard")
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                routes.forEachIndexed { i, v ->
+                    SegmentedButton(via == v, { via = v }, SegmentedButtonDefaults.itemShape(i, routes.size)) { Text(routeNames[i]) }
                 }
             }
 
-            Text("MCP exposure", style = SecrmType.Caption, color = Palette.TextSecondary)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(canExec, { canExec = it })
-                Spacer(Modifier.width(Space.sm))
-                Text("Allow ssh.exec", style = SecrmType.Body, color = Palette.TextPrimary)
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(canRead, { canRead = it })
-                Spacer(Modifier.width(Space.sm))
-                Text("Allow ssh.read_file", style = SecrmType.Body, color = Palette.TextPrimary)
-            }
+            Text("MCP exposure", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            ListItem(
+                headlineContent = { Text("Allow ssh.exec") },
+                supportingContent = { Text("Claude can run commands on this host") },
+                trailingContent = { Switch(canExec, { canExec = it }) },
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+            )
+            ListItem(
+                headlineContent = { Text("Allow ssh.read_file") },
+                supportingContent = { Text("Claude can read files on this host") },
+                trailingContent = { Switch(canRead, { canRead = it }) },
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+            )
 
             Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                 PillButton("Cancel", PillStyle.Ghost, Modifier.weight(1f)) { onDismiss() }
@@ -534,20 +470,5 @@ private fun ConnectionFormSheet(
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun AuthTab(label: String, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    Box(
-        modifier
-            .clip(RoundedCornerShape(Space.pillRadius))
-            .background(if (selected) Palette.Indigo else Color.Transparent)
-            .tappable(onClick)
-            .padding(vertical = 10.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(label, style = SecrmType.Label,
-            color = if (selected) Palette.OnIndigo else Palette.TextSecondary)
     }
 }

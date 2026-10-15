@@ -7,6 +7,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -41,51 +42,71 @@ fun BitwardenScreen(app: SecureRemoteApp, onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Bitwarden", style = SecrmType.Title, color = Palette.TextPrimary) },
+                title = { Text("Bitwarden", style = MaterialTheme.typography.titleLarge) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Rounded.KeyboardArrowLeft, "Back", tint = Palette.TextSecondary)
-                    }
+                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.KeyboardArrowLeft, "Back") }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Palette.Void)
             )
         },
-        containerColor = Palette.Void
     ) { pad ->
         Column(
-            Modifier.fillMaxSize().padding(pad).padding(Space.screenPadding)
+            Modifier.fillMaxSize().padding(pad).padding(horizontal = Space.screenPadding)
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(Space.md)
         ) {
+            if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
             if (configured) {
-                Text(count?.let { "Unlocked · $it SSH key${if (it == 1) "" else "s"}" } ?: "Locked",
-                    style = SecrmType.Body, color = Palette.TextPrimary)
-                if (count == null) PillButton("Unlock", PillStyle.Primary, Modifier.fillMaxWidth(), !busy) {
-                    act { vault.ensureUnlocked { activity.authenticate() } }
-                } else PillButton("Lock", PillStyle.Ghost, Modifier.fillMaxWidth()) {
-                    vault.lock(); count = null
+                val unlocked = count != null
+                GlassCard(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(Space.lg), verticalArrangement = Arrangement.spacedBy(Space.md)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text("Vault", style = MaterialTheme.typography.titleMedium)
+                                Text(
+                                    if (unlocked) "$count SSH key${if (count == 1) "" else "s"} available" else "Unlock with your fingerprint to use your keys",
+                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            StatusPill(if (unlocked) ConnectionVisual.Up else ConnectionVisual.Idle, if (unlocked) "Unlocked" else "Locked")
+                        }
+                        if (!unlocked) PillButton("Unlock", PillStyle.Primary, Modifier.fillMaxWidth(), !busy) {
+                            act { vault.ensureUnlocked { activity.authenticate() } }
+                        } else PillButton("Lock", PillStyle.Ghost, Modifier.fillMaxWidth()) {
+                            vault.lock(); count = null
+                        }
+                    }
                 }
-                PillButton("Sign out", PillStyle.Danger, Modifier.fillMaxWidth()) {
-                    vault.signOut(); configured = false; count = null
-                }
+                OutlinedButton(
+                    onClick = { vault.signOut(); configured = false; count = null },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                ) { Text("Sign out of Bitwarden") }
             } else {
-                Text(
-                    "Sign in with your personal API key (web vault → Settings → Security → " +
-                    "Keys → View API key). The master password is used once; after that, " +
-                    "fingerprint or device PIN unlocks your SSH keys.",
-                    style = SecrmType.Caption, color = Palette.TextSecondary
-                )
-                Field(server, { server = it }, "Server URL")
-                Field(clientId, { clientId = it }, "client_id")
-                Field(secret, { secret = it }, "client_secret", hidden = true)
-                Field(password, { password = it }, "Master password", hidden = true)
-                PillButton("Sign in", PillStyle.Primary, Modifier.fillMaxWidth(),
-                    !busy && listOf(server, clientId, secret, password).all(String::isNotBlank)) {
-                    act { vault.login(server, clientId, secret, password) { activity.authenticate() }; password = "" }
+                GlassCard(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(Space.lg), verticalArrangement = Arrangement.spacedBy(Space.md)) {
+                        Text("Sign in", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "Use your personal API key (web vault → Settings → Security → Keys → View API key). " +
+                            "The master password is used once; after that, your fingerprint or device PIN unlocks your SSH keys.",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Field(server, { server = it }, "Server URL")
+                        Field(clientId, { clientId = it }, "client_id")
+                        Field(secret, { secret = it }, "client_secret", hidden = true)
+                        Field(password, { password = it }, "Master password", hidden = true)
+                        PillButton("Sign in", PillStyle.Primary, Modifier.fillMaxWidth(),
+                            !busy && listOf(server, clientId, secret, password).all(String::isNotBlank)) {
+                            act { vault.login(server, clientId, secret, password) { activity.authenticate() }; password = "" }
+                        }
+                    }
                 }
             }
-            if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-            error?.let { Text(it, style = SecrmType.Caption, color = Palette.Danger) }
+            error?.let {
+                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer, contentColor = MaterialTheme.colorScheme.onErrorContainer), modifier = Modifier.fillMaxWidth()) {
+                    Text(it, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(Space.lg))
+                }
+            }
+            Spacer(Modifier.height(Space.lg))
         }
     }
 }

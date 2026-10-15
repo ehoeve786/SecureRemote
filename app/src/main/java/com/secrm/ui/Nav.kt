@@ -91,7 +91,7 @@ fun SecrmNavHost(app: SecureRemoteApp) {
             popExitTransition = { fadeOut(tween(Motion.SnapMs)) },
         ) {
             composable(Routes.Hosts) {
-                DashboardScreen(app = app, onOpenShell = { nav.goTab(Routes.Terminal) })
+                DashboardScreen(app = app, onOpenShell = { nav.goTab(Routes.Terminal) }, onOpenFiles = { nav.goTab(Routes.Files) })
             }
             composable(Routes.Terminal) {
                 TerminalScreen(app, onOpenHosts = { nav.goTab(Routes.Hosts) }, onOpenFiles = { nav.goTab(Routes.Files) })

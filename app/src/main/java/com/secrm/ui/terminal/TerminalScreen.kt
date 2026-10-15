@@ -59,7 +59,7 @@ fun TerminalScreen(app: SecureRemoteApp, onOpenHosts: () -> Unit, onOpenFiles: (
         Box(Modifier.weight(1f).background(androidx.compose.ui.graphics.Color.Black)) {
             TerminalSurface(bridge = bridge, onReady = { ready = it }, modifier = Modifier.fillMaxSize())
             if (ready == false) Text("Could not open a shell. Go back and reconnect.",
-                style = SecrmType.Body, color = androidx.compose.ui.graphics.Color(0xFFFF8A80), modifier = Modifier.padding(Space.md))
+                style = MaterialTheme.typography.bodyMedium, color = androidx.compose.ui.graphics.Color(0xFFFF8A80), modifier = Modifier.padding(Space.md))
         }
         // Extra-keys toolbar
         Row(
@@ -90,7 +90,7 @@ private fun Key(label: String, onClick: () -> Unit) {
         modifier = Modifier.size(width = 40.dp, height = 36.dp).tappable(onClick),
         contentAlignment = Alignment.Center
     ) {
-        Text(label, style = SecrmType.MonoSmall, color = Palette.TextPrimary)
+        Text(label, style = MaterialTheme.mono, color = MaterialTheme.colorScheme.onSurface)
     }
 }
 
@@ -138,12 +138,12 @@ private fun TranscriptSelector(text: String, onClose: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(onClick = onClose) {
-                    Icon(Icons.AutoMirrored.Rounded.KeyboardArrowLeft, "Back", tint = Palette.TextTertiary)
+                    Icon(Icons.AutoMirrored.Rounded.KeyboardArrowLeft, "Back", tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
                 }
                 Text(if (anchor < 0) "Long-press a line, then drag" else "${kotlin.math.abs(end - anchor) + 1} lines",
-                    style = SecrmType.MonoSmall, color = Palette.TextTertiary, modifier = Modifier.weight(1f))
+                    style = MaterialTheme.mono, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f), modifier = Modifier.weight(1f))
                 Box(Modifier.tappable { anchor = 0; end = lines.lastIndex }.padding(Space.sm)) {
-                    Text("All", style = SecrmType.MonoSmall, color = Palette.Indigo)
+                    Text("All", style = MaterialTheme.mono, color = MaterialTheme.colorScheme.primary)
                 }
                 Box(Modifier.tappable {
                     if (anchor < 0) return@tappable
@@ -151,7 +151,7 @@ private fun TranscriptSelector(text: String, onClose: () -> Unit) {
                         .setPrimaryClip(android.content.ClipData.newPlainText("terminal", lines.subList(minOf(anchor, end), maxOf(anchor, end) + 1).joinToString("\n")))
                     onClose()
                 }.padding(Space.sm)) {
-                    Text("Copy", style = SecrmType.MonoSmall, color = if (anchor < 0) Palette.TextTertiary else Palette.Indigo)
+                    Text("Copy", style = MaterialTheme.mono, color = if (anchor < 0) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f) else MaterialTheme.colorScheme.primary)
                 }
             }
             LazyColumn(
@@ -171,7 +171,7 @@ private fun TranscriptSelector(text: String, onClose: () -> Unit) {
                     val selected = anchor >= 0 && i in minOf(anchor, end)..maxOf(anchor, end)
                     Text(lines[i], color = MaterialTheme.colorScheme.onSurface,
                         fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, fontSize = 12.sp,
-                        modifier = Modifier.fillMaxWidth().background(if (selected) Palette.Indigo.copy(alpha = 0.4f) else androidx.compose.ui.graphics.Color.Transparent))
+                        modifier = Modifier.fillMaxWidth().background(if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.4f) else androidx.compose.ui.graphics.Color.Transparent))
                 }
             }
         }
