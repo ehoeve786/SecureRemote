@@ -46,6 +46,15 @@ class SshIntegrationTest {
                 }
             }
         }
+        fun text() = synchronized(out) { out.toString() }
+
+        /** Fails with what the shell printed, so a miss is diagnosable from the test report. */
+        fun expect(marker: String) {
+            val deadline = System.currentTimeMillis() + 10_000
+            while (System.currentTimeMillis() < deadline && !synchronized(out) { out.contains(marker) }) Thread.sleep(50)
+            assertTrue("expected \"$marker\" in shell output:\n${text()}", synchronized(out) { out.contains(marker) })
+        }
+
         fun awaitText(marker: String, timeoutMs: Long = 10_000): Boolean {
             val deadline = System.currentTimeMillis() + timeoutMs
             while (System.currentTimeMillis() < deadline) {
@@ -77,19 +86,25 @@ class SshIntegrationTest {
         server.stop(true)
     }
 
+    /** Connects or fails with the client's own state and JSch's log, so the cause shows in the report. */
+    private suspend fun connectOrFail() {
+        val ok = ssh.connect(config())
+        assertTrue("connect failed: ${ssh.state.value}\n${ssh.recentLog()}", ok)
+    }
+
     private fun config(pw: String = password) =
         SshConfig(host = "127.0.0.1", port = port, username = user, auth = SshAuth.Password(pw), connectTimeoutMs = 5_000)
 
     @Test fun connectsWithPasswordAndRunsShellCommands() = runBlocking {
-        assertTrue(ssh.connect(config()))
+        connectOrFail()
         assertTrue(ssh.ensureShell())
         val shell = Pump(ssh.shellInputStream()!!)
         ssh.shellOutputStream()!!.apply { write("echo MARK\$((6*7))\n".toByteArray()); flush() }
-        assertTrue("shell output", shell.awaitText("MARK42"))
+        shell.expect("MARK42")
     }
 
     @Test fun openingSftpLeavesTheTerminalSessionAlive() = runBlocking {
-        assertTrue(ssh.connect(config()))
+        connectOrFail()
         assertTrue(ssh.ensureShell())
         val shell = Pump(ssh.shellInputStream()!!)
         val typed = ssh.shellOutputStream()!!
@@ -102,7 +117,7 @@ class SshIntegrationTest {
             assertEquals("hi there", bytes.toString(Charsets.UTF_8))
 
             typed.write("echo STILL\$((1+1))\n".toByteArray()); typed.flush()
-            assertTrue("terminal must still answer after SFTP is used", shell.awaitText("STILL2"))
+            shell.expect("STILL2")
             assertTrue(ssh.activeSession()?.isConnected == true)
         } finally {
             sftp.close()
@@ -121,7 +136,7 @@ class SshIntegrationTest {
 
     @Test fun reconnectingBumpsTheGenerationSoScreensReset() = runBlocking {
         val before = ssh.generation
-        assertTrue(ssh.connect(config()))
+        connectOrFail()
         assertEquals(before + 1, ssh.generation)
         ssh.disconnect()
         assertEquals(null, ssh.activeSession())
