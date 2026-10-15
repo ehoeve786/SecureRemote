@@ -1,6 +1,7 @@
 package com.secrm.core.ssh
 
 import com.jcraft.jsch.ChannelSftp
+import com.jcraft.jsch.Session
 import com.jcraft.jsch.SftpProgressMonitor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
@@ -25,18 +26,22 @@ data class SftpEntry(
 class SftpClient(private val ssh: SshClientManager) {
     private val lock = Mutex() // one SFTP request at a time on the channel
     private var channel: ChannelSftp? = null
+    private var aux: Session? = null
+    private var gen = -1
 
     private suspend fun <T> run(block: (ChannelSftp) -> T): T = withContext(Dispatchers.IO) {
         lock.withLock {
-            val ch = channel?.takeIf { it.isConnected && !it.isClosed } ?: run {
-                val s = ssh.activeSession() ?: error("Not connected")
+            val ch = channel?.takeIf { it.isConnected && !it.isClosed && gen == ssh.generation } ?: run {
+                close()
+                val s = ssh.openAuxSession() ?: error("Not connected")
+                aux = s; gen = ssh.generation
                 (s.openChannel("sftp") as ChannelSftp).also { it.connect(10_000); channel = it }
             }
             try { block(ch) } catch (t: Throwable) { if (!ch.isConnected) channel = null; throw t }
         }
     }
 
-    fun close() { runCatching { channel?.disconnect() }; channel = null }
+    fun close() { runCatching { channel?.disconnect() }; runCatching { aux?.disconnect() }; channel = null; aux = null }
 
     suspend fun home(): String = run { it.realpath(".") }
 

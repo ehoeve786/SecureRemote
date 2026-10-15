@@ -45,10 +45,15 @@ class SshClientManager {
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var session: Session? = null
+    private var lastCfg: SshConfig? = null
+    private val aux = mutableListOf<Session>()
     private var shell: ChannelShell? = null
 
     /** The live session, for extra channels such as [SftpClient]. */
     fun activeSession(): Session? = session?.takeIf { it.isConnected }
+
+    /** A second, independent session to the connected host (null if not connected). Caller disconnects it. */
+    suspend fun openAuxSession(): Session? = withContext(Dispatchers.IO) { if (activeSession() == null) null else lastCfg?.let(::newSession)?.also { synchronized(aux) { aux += it } } }
 
     /** Resolves [SshConfig.via] to its tunnel's proxy; throws, in plain words, if it can't come up. */
     var proxy: (String) -> Proxy = { error("No private network named $it") }
@@ -108,9 +113,8 @@ class SshClientManager {
     fun shellInputStream(): InputStream? = shellIn
     fun shellOutputStream(): OutputStream? = shellOut
 
-    suspend fun connect(cfg: SshConfig): Boolean = withContext(Dispatchers.IO) {
-        try {
-            _state.value = SshState.Connecting
+    /** Opens and authenticates a new session for [cfg]; the SFTP client uses its own so a hiccup there can't take down the terminal. */
+    private fun newSession(cfg: SshConfig): Session {
             val jsch = JSch()
 
             when (val a = cfg.auth) {
@@ -130,7 +134,6 @@ class SshClientManager {
             }
 
             val s = jsch.getSession(cfg.username, cfg.host, cfg.port)
-            session = s
             // A known key is checked before authenticating, so credentials never go to an impostor.
             cfg.hostKey?.let {
                 s.setHostKeyAlias(ALIAS)
@@ -154,7 +157,16 @@ class SshClientManager {
             })
             if (cfg.auth is SshAuth.Password) s.setPassword((cfg.auth as SshAuth.Password).password)
 
-            s.connect(if (cfg.via != null) maxOf(cfg.connectTimeoutMs, 30_000) else cfg.connectTimeoutMs)
+            try { s.connect(if (cfg.via != null) maxOf(cfg.connectTimeoutMs, 30_000) else cfg.connectTimeoutMs) } catch (t: Throwable) { s.disconnect(); throw t }
+            return s
+    }
+
+    suspend fun connect(cfg: SshConfig): Boolean = withContext(Dispatchers.IO) {
+        try {
+            _state.value = SshState.Connecting
+            val s = newSession(cfg)
+            session = s
+            lastCfg = cfg
             hostKey = s.hostKey?.key
             target = "${cfg.username}@${cfg.host}"
             connectedName = cfg.name
@@ -216,6 +228,7 @@ class SshClientManager {
         connectedName = null
         runCatching { shell?.disconnect() }; shell = null
         runCatching { session?.disconnect() }; session = null
+        synchronized(aux) { aux.forEach { runCatching { it.disconnect() } }; aux.clear() }
     }
 
     fun shutdown() { cleanup(); scope.cancel() }
