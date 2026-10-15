@@ -16,6 +16,9 @@
  */
 package org.connectbot.terminal
 
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
+
 import java.io.File
 import java.nio.ByteBuffer
 
@@ -35,10 +38,10 @@ import java.nio.ByteBuffer
  */
 internal class TerminalNative(callbacks: TerminalCallbacks) : AutoCloseable {
     private var nativePtr: Long = 0
-    private val lifetimeLock = Any()
+    private val lifetimeLock = ReentrantLock(true)
     private var inNativeCall = false
 
-    private inline fun <T> withNative(block: () -> T): T = synchronized(lifetimeLock) {
+    private inline fun <T> withNative(block: () -> T): T = lifetimeLock.withLock {
         checkNotClosed()
         check(!inNativeCall) { "Synchronous native reentry from a terminal callback is prohibited" }
         inNativeCall = true
@@ -171,7 +174,7 @@ internal class TerminalNative(callbacks: TerminalCallbacks) : AutoCloseable {
      * After calling this, the Terminal instance cannot be used.
      */
     override fun close() {
-        synchronized(lifetimeLock) {
+        lifetimeLock.withLock {
             check(!inNativeCall) { "Cannot close a terminal from its native callback" }
             if (nativePtr != 0L) {
                 nativeDestroy(nativePtr)
