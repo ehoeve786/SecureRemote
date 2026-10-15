@@ -40,10 +40,11 @@ fun TerminalScreen(app: SecureRemoteApp, onOpenHosts: () -> Unit, onOpenFiles: (
     var selecting by remember { mutableStateOf<String?>(null) }
     selecting?.let { TranscriptSelector(it) { selecting = null } }
     val ctx = androidx.compose.ui.platform.LocalContext.current
+    val imeVisible = WindowInsets.ime.getBottom(androidx.compose.ui.platform.LocalDensity.current) > 0
 
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).safeDrawingPadding()) {
         // Hidden while the keyboard is up, so the terminal gets the room.
-        AnimatedVisibility(visible = !WindowInsets.isImeVisible) { Row(
+        AnimatedVisibility(visible = !imeVisible) { Row(
             Modifier.fillMaxWidth().height(48.dp).padding(horizontal = Space.md),
             verticalAlignment = Alignment.CenterVertically
         ) {
