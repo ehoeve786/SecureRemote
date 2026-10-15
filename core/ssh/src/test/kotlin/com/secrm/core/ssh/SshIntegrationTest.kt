@@ -4,7 +4,11 @@ import kotlinx.coroutines.runBlocking
 import org.apache.sshd.server.SshServer
 import org.apache.sshd.server.auth.password.PasswordAuthenticator
 import org.apache.sshd.server.keyprovider.SimpleGeneratorHostKeyProvider
-import org.apache.sshd.server.shell.ProcessShellFactory
+import org.apache.sshd.server.Environment
+import org.apache.sshd.server.ExitCallback
+import org.apache.sshd.server.channel.ChannelSession
+import org.apache.sshd.server.command.Command
+import org.apache.sshd.server.shell.ShellFactory
 import org.apache.sshd.sftp.server.SftpSubsystemFactory
 import org.apache.sshd.common.file.virtualfs.VirtualFileSystemFactory
 import org.junit.After
@@ -16,10 +20,39 @@ import org.junit.Before
 import org.junit.Test
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
+import java.io.OutputStream
 import java.net.ServerSocket
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.concurrent.thread
+
+/** A shell that echoes what it reads: a real channel round trip without a process behind it. */
+private class EchoShell : Command {
+    private lateinit var input: InputStream
+    private lateinit var output: OutputStream
+    private var exit: ExitCallback? = null
+    private var worker: Thread? = null
+
+    override fun setInputStream(input: InputStream) { this.input = input }
+    override fun setOutputStream(output: OutputStream) { this.output = output }
+    override fun setErrorStream(err: OutputStream) {}
+    override fun setExitCallback(callback: ExitCallback) { exit = callback }
+
+    override fun start(channel: ChannelSession, env: Environment) {
+        worker = thread(isDaemon = true) {
+            val buf = ByteArray(256)
+            while (true) {
+                val n = input.read(buf)
+                if (n < 0) break
+                output.write(buf, 0, n)
+                output.flush()
+            }
+            exit?.onExit(0)
+        }
+    }
+
+    override fun destroy(channel: ChannelSession) { worker?.interrupt() }
+}
 
 /**
  * Runs the client against an in-process OpenSSH-compatible server (password auth, a shell and the
@@ -76,7 +109,7 @@ class SshIntegrationTest {
             passwordAuthenticator = PasswordAuthenticator { u, p, _ -> u == user && p == password }
             fileSystemFactory = VirtualFileSystemFactory(root)
             subsystemFactories = listOf(SftpSubsystemFactory())
-            shellFactory = ProcessShellFactory("/bin/cat", "-")
+            shellFactory = ShellFactory { EchoShell() }
         }
         server.start()
         ssh = SshClientManager()
