@@ -25,9 +25,9 @@ data class SftpEntry(
 /** SFTP over a second channel of the SSH session already open in [ssh]; reopens it if the session is replaced. */
 class SftpClient(private val ssh: SshClientManager) {
     private val lock = Mutex() // one SFTP request at a time on the channel
-    private var channel: ChannelSftp? = null
-    private var aux: Session? = null
-    private var gen = -1
+    @Volatile private var channel: ChannelSftp? = null
+    @Volatile private var aux: Session? = null
+    @Volatile private var gen = -1
 
     private suspend fun <T> run(block: (ChannelSftp) -> T): T = withContext(Dispatchers.IO) {
         lock.withLock {
@@ -41,7 +41,7 @@ class SftpClient(private val ssh: SshClientManager) {
         }
     }
 
-    fun close() { runCatching { channel?.disconnect() }; runCatching { aux?.disconnect() }; channel = null; aux = null }
+    fun close() { runCatching { channel?.disconnect() }; aux?.let(ssh::releaseAux); channel = null; aux = null }
 
     suspend fun home(): String = run { it.realpath(".") }
 

@@ -44,16 +44,19 @@ class SshClientManager {
     }
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    private var session: Session? = null
-    private var lastCfg: SshConfig? = null
+    @Volatile private var session: Session? = null
+    @Volatile private var lastCfg: SshConfig? = null
     private val aux = mutableListOf<Session>()
-    private var shell: ChannelShell? = null
+    @Volatile private var shell: ChannelShell? = null
 
     /** The live session, for extra channels such as [SftpClient]. */
     fun activeSession(): Session? = session?.takeIf { it.isConnected }
 
     /** A second, independent session to the connected host (null if not connected). Caller disconnects it. */
     suspend fun openAuxSession(): Session? = withContext(Dispatchers.IO) { if (activeSession() == null) null else lastCfg?.let(::newSession)?.also { synchronized(aux) { aux += it } } }
+
+    /** Disconnects an aux session from [openAuxSession] and forgets it, so the list does not grow. */
+    fun releaseAux(s: Session) { runCatching { s.disconnect() }; synchronized(aux) { aux.remove(s) } }
 
     /** Resolves [SshConfig.via] to its tunnel's proxy; throws, in plain words, if it can't come up. */
     var proxy: (String) -> Proxy = { error("No private network named $it") }
@@ -108,8 +111,8 @@ class SshClientManager {
         return p.size == 4 && (p[0] == 10 || (p[0] == 192 && p[1] == 168) || (p[0] == 172 && p[1] in 16..31))
     }
 
-    private var shellIn: InputStream? = null
-    private var shellOut: OutputStream? = null
+    @Volatile private var shellIn: InputStream? = null
+    @Volatile private var shellOut: OutputStream? = null
     fun shellInputStream(): InputStream? = shellIn
     fun shellOutputStream(): OutputStream? = shellOut
 
@@ -189,9 +192,10 @@ class SshClientManager {
     suspend fun ensureShell(): Boolean = withContext(Dispatchers.IO) {
         val s = session ?: return@withContext false
         // A fresh shell per terminal screen; closing the old one ends its reader.
-        runCatching { shell?.disconnect() }
+        runCatching { shell?.disconnect() }; shell = null
+        var opened: ChannelShell? = null
         try {
-            val ch = s.openChannel("shell") as ChannelShell
+            val ch = (s.openChannel("shell") as ChannelShell).also { opened = it }
             ch.setPtyType("xterm-256color", 120, 40, 0, 0)
             // Streams must exist before connect, or the banner and first prompt are dropped.
             shellIn = ch.inputStream
@@ -199,20 +203,32 @@ class SshClientManager {
             ch.connect(10_000)
             shell = ch
             true
-        } catch (t: Throwable) { false }
+        } catch (t: Throwable) {
+            opened?.disconnect()
+            if (t is CancellationException) throw t
+            false
+        }
     }
 
     suspend fun execOnce(command: String): String = withContext(Dispatchers.IO) {
         val s = session ?: error("No active SSH session")
         val ch = s.openChannel("exec") as com.jcraft.jsch.ChannelExec
-        ch.setCommand(command)
         val out = ByteArrayOutputStream()
         val err = ByteArrayOutputStream()
-        ch.setErrStream(err)
-        // Take the stream before connecting, or JSch drops the command's first output.
-        val input = ch.inputStream
-        ch.connect(10_000)
-        try { input.copyTo(out) } finally { ch.disconnect() }
+        coroutineScope {
+            // Cancelling the caller runs this watcher, which disconnects the channel and unblocks the read below.
+            val watcher = launch(start = CoroutineStart.UNDISPATCHED) {
+                try { awaitCancellation() } finally { ch.disconnect() }
+            }
+            try {
+                ch.setCommand(command)
+                ch.setErrStream(err)
+                // Take the stream before connecting, or JSch drops the command's first output.
+                val input = ch.inputStream
+                ch.connect(10_000)
+                input.copyTo(out)
+            } finally { watcher.cancel(); ch.disconnect() }
+        }
         buildString {
             append(out.toString(Charsets.UTF_8.name()))
             val e = err.toString(Charsets.UTF_8.name())

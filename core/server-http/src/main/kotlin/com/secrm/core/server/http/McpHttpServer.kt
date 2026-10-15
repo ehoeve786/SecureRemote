@@ -12,6 +12,7 @@ import io.ktor.server.plugins.statuspages.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import io.ktor.utils.io.readAvailable
 
 /**
  * Ktor CIO host bound to loopback. Two connectors:
@@ -28,9 +29,13 @@ class McpHttpServer(
     private val remotePort: Int = 7824,
     private val mcpPath: String = "/mcp"
 ) {
-    companion object { private const val TAG = "McpHttpServer" }
+    companion object {
+        private const val TAG = "McpHttpServer"
+        private const val MAX_BODY_BYTES = 1 shl 20
+    }
     private var engine: EmbeddedServer<*, *>? = null
 
+    @Synchronized
     fun start() {
         if (engine != null) return
         engine = embeddedServer(CIO, configure = {
@@ -70,7 +75,17 @@ class McpHttpServer(
                         is McpAuth.Decision.Allow -> Unit
                     }
 
-                    val body = call.receiveText()
+                    // Streamed with a cap, so chunked bodies are bounded too (Content-Length alone is not).
+                    val out = java.io.ByteArrayOutputStream()
+                    val channel = call.receiveChannel()
+                    val chunk = ByteArray(8192)
+                    while (true) {
+                        val n = channel.readAvailable(chunk, 0, chunk.size)
+                        if (n < 0) break
+                        if (out.size() + n > MAX_BODY_BYTES) return@post call.respond(HttpStatusCode.PayloadTooLarge)
+                        out.write(chunk, 0, n)
+                    }
+                    val body = out.toString(Charsets.UTF_8.name())
                     val session = Session(id = "http", clientLabel = "mcp")
                     val response = McpProtocol.handle(body, session, dispatcher)
 
@@ -94,6 +109,9 @@ class McpHttpServer(
         Log.i(TAG, "MCP listening on 127.0.0.1:$localPort and :$remotePort$mcpPath")
     }
 
+    @Synchronized
     fun stop() { engine?.stop(500, 1500); engine = null }
+
+    @Synchronized
     fun isRunning(): Boolean = engine != null
 }

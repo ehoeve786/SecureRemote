@@ -1,5 +1,7 @@
 package com.secrm.core.server.http
 
+import java.security.MessageDigest
+
 class McpAuth(
     private val localPort: Int,
     private val remotePort: Int,
@@ -45,7 +47,7 @@ class McpAuth(
 
         val token = authorization?.removePrefix("Bearer ")?.trim()
         return when {
-            isLocal && token == localToken -> Decision.Allow
+            isLocal && token != null && MessageDigest.isEqual(token.toByteArray(), localToken.toByteArray()) -> Decision.Allow
             isRemote && token != null && remoteToken(token) -> Decision.Allow
             else -> Decision.Deny(401, "Unauthorized")
         }

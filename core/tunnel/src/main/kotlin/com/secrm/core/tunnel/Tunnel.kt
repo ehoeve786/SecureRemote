@@ -61,11 +61,18 @@ abstract class Tunnel(context: Context, private val scope: CoroutineScope, key: 
                 mutableState.value = State.Failed(e.message ?: e.toString(), e.stackTraceToString())
                 return@launch
             }
+            // Polls fast after a change and backs off while nothing changes, so an idle or waiting tunnel
+            // does not wake the device every second.
+            var wait = 1_000L
             while (isActive) {
-                status()?.let { runCatching { JSONObject(it) }.getOrNull() }?.let { st ->
-                    mutableState.value = stateOf(st)
+                val next = status()?.let { runCatching { JSONObject(it) }.getOrNull() }?.let { stateOf(it) }
+                if (next != null && next != mutableState.value) {
+                    mutableState.value = next
+                    wait = 1_000L
+                } else {
+                    wait = minOf(wait * 2, if (mutableState.value is State.Up) 5_000L else 30_000L)
                 }
-                delay(if (state.value is State.Up) 5_000 else 1_000)
+                delay(wait)
             }
         }
     }

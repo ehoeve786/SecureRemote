@@ -2,6 +2,8 @@ package com.secrm.core.mcp
 
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
@@ -22,14 +24,24 @@ class McpAuditLog(context: Context) {
         Regex("(?i)bearer\\s+\\S+"),
         Regex("[A-Za-z0-9+/]{40,}={0,2}")
     )
+    private val rotated = File(file.path + ".1")
+    private val lock = Mutex()
+
     suspend fun record(e: AuditEntry) = withContext(Dispatchers.IO) {
         var s = e.argsRedacted; pats.forEach { s = it.replace(s, "[REDACTED]") }
-        file.appendText(json.encodeToString(e.copy(argsRedacted = s)) + "\n")
-    }
-    suspend fun tail(limit: Int = 200): List<AuditEntry> = withContext(Dispatchers.IO) {
-        if (!file.exists()) emptyList()
-        else file.readLines().takeLast(limit).mapNotNull {
-            runCatching { json.decodeFromString<AuditEntry>(it) }.getOrNull()
+        val line = json.encodeToString(e.copy(argsRedacted = s)) + "\n"
+        lock.withLock {
+            // Keep the log bounded: the previous generation is replaced, so at most ~2 MB is kept.
+            if (file.length() > MAX_BYTES) file.renameTo(rotated)
+            file.appendText(line)
         }
     }
+    suspend fun tail(limit: Int = 200): List<AuditEntry> = withContext(Dispatchers.IO) {
+        lock.withLock {
+            (rotated.takeIf { it.exists() }?.readLines().orEmpty() + file.takeIf { it.exists() }?.readLines().orEmpty())
+                .takeLast(limit).mapNotNull { runCatching { json.decodeFromString<AuditEntry>(it) }.getOrNull() }
+        }
+    }
+
+    private companion object { const val MAX_BYTES = 1_000_000L }
 }

@@ -24,14 +24,21 @@ class WireGuardTunnel(
     private val appContext = context.applicationContext
     @Volatile private var tunnel: GoTunnel? = null
 
-    val configured get() = loadConfig() != null
+    /** Cached so the UI does not decrypt the private key just to ask whether one is saved. */
+    @Volatile private var hasConfig = false
+    val configured get() = hasConfig
 
     /** The phone's public key, for the server's peer list, or null without a config. */
     @Volatile var publicKey: String? = null; private set
 
     init {
         // Deriving the key loads the Go library, so it stays off the thread that builds this.
-        scope.launch(Dispatchers.IO) { loadConfig()?.let { c -> publicKey = runCatching { lib(); Srnet.publicKeyOfConfig(c) }.getOrNull() } }
+        scope.launch(Dispatchers.IO) {
+            loadConfig()?.let { c ->
+                hasConfig = true
+                publicKey = runCatching { lib(); Srnet.publicKeyOfConfig(c) }.getOrNull()
+            }
+        }
     }
 
     /** Checks and saves a wg-quick config; returns the problem in plain words, or null. Restarts a running tunnel. */
@@ -39,6 +46,7 @@ class WireGuardTunnel(
         val key = runCatching { lib(); Srnet.publicKeyOfConfig(config) }
         key.exceptionOrNull()?.let { return it.message ?: it.toString() }
         saveConfig(config)
+        hasConfig = true
         publicKey = key.getOrNull()
         if (enabled) { stop(); start() }
         return null
@@ -48,13 +56,13 @@ class WireGuardTunnel(
     fun forget() {
         stop()
         saveConfig(null)
+        hasConfig = false
         publicKey = null
     }
 
     override fun startNative() {
         val config = loadConfig() ?: error("Import a WireGuard config first")
         lib()
-        publicKey = Srnet.publicKeyOfConfig(config)
         (tunnel ?: Srnet.newTunnel().also { tunnel = it }).start(config)
     }
 
