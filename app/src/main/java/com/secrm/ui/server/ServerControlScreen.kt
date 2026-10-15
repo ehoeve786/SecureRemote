@@ -87,7 +87,7 @@ private fun AppearanceSection(ui: com.secrm.data.UiPrefs) {
             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                 modes.forEachIndexed { i, m ->
                     SegmentedButton(
-                        selected = ui.mode == m, onClick = { ui.setMode(m) },
+                        selected = ui.mode == m, onClick = { ui.chooseMode(m) },
                         shape = SegmentedButtonDefaults.itemShape(i, modes.size),
                     ) { Text(m.name) }
                 }
@@ -98,7 +98,7 @@ private fun AppearanceSection(ui: com.secrm.data.UiPrefs) {
                     Text("Use your wallpaper's palette (Material You) instead of the SecureRemote indigo.",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                Switch(ui.dynamicColor, ui::setDynamicColor)
+                Switch(ui.dynamicColor, ui::chooseDynamicColor)
             }
         }
     }

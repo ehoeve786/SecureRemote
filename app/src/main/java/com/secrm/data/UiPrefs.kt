@@ -15,6 +15,6 @@ class UiPrefs(context: Context) {
     var dynamicColor by mutableStateOf(p.getBoolean("dynamic", false))
         private set
 
-    fun setMode(m: ThemeMode) { mode = m; p.edit().putString("mode", m.name).apply() }
-    fun setDynamicColor(on: Boolean) { dynamicColor = on; p.edit().putBoolean("dynamic", on).apply() }
+    fun chooseMode(m: ThemeMode) { mode = m; p.edit().putString("mode", m.name).apply() }
+    fun chooseDynamicColor(on: Boolean) { dynamicColor = on; p.edit().putBoolean("dynamic", on).apply() }
 }
