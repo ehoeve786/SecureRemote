@@ -3,7 +3,7 @@ package com.secrm.core.ssh
 import kotlinx.coroutines.runBlocking
 import org.apache.sshd.server.SshServer
 import org.apache.sshd.server.auth.password.PasswordAuthenticator
-import org.apache.sshd.common.keyprovider.SimpleGeneratorHostKeyProvider
+import org.apache.sshd.server.keyprovider.SimpleGeneratorHostKeyProvider
 import org.apache.sshd.server.shell.ProcessShellFactory
 import org.apache.sshd.sftp.server.SftpSubsystemFactory
 import org.apache.sshd.common.file.virtualfs.VirtualFileSystemFactory

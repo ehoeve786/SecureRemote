@@ -14,7 +14,7 @@ class McpOAuthTest {
         .encodeToString(MessageDigest.getInstance("SHA-256").digest(verifier.toByteArray()))
     private val redirect = "https://claude.ai/api/mcp/auth_callback"
 
-    private class Clock(var t: Long = 1_000_000L) { fun now() = t }
+    private class Clock(var t: Long = System.currentTimeMillis()) { fun now() = t }
 
     private fun newOAuth(store: Array<String?> = arrayOfNulls(1), clock: Clock = Clock()) =
         McpOAuth({ store[0] }, { store[0] = it }, clock::now)
