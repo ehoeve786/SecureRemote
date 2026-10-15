@@ -90,7 +90,32 @@ class McpOAuthTest {
         val (access2, refresh2) = requireNotNull(oauth.token(mapOf("grant_type" to "refresh_token", "refresh_token" to refresh1)))
         assertTrue(oauth.isValid(access2))
         assertNull("a refresh token is single-use", oauth.token(mapOf("grant_type" to "refresh_token", "refresh_token" to refresh1)))
-        requireNotNull(oauth.token(mapOf("grant_type" to "refresh_token", "refresh_token" to refresh2)))
+        assertFalse("replaying a rotated token revokes its whole family", oauth.isValid(access2))
+        assertNull("the live refresh token dies with its family", oauth.token(mapOf("grant_type" to "refresh_token", "refresh_token" to refresh2)))
+    }
+
+    @Test fun omittedRedirectUriIsRejectedWhenAuthorizeSentOne() {
+        val oauth = newOAuth()
+        val code = requireNotNull(pair(oauth, oauth.newPairingCode()))
+        assertNull(oauth.token(mapOf("grant_type" to "authorization_code", "code" to code, "code_verifier" to verifier)))
+    }
+
+    @Test fun replayedRefreshTokenRevokesFamilyEvenAfterRotationChain() {
+        val oauth = newOAuth()
+        val (_, r1) = requireNotNull(exchange(oauth, requireNotNull(pair(oauth, oauth.newPairingCode()))))
+        val (_, r2) = requireNotNull(oauth.token(mapOf("grant_type" to "refresh_token", "refresh_token" to r1)))
+        val (a3, _) = requireNotNull(oauth.token(mapOf("grant_type" to "refresh_token", "refresh_token" to r2)))
+        oauth.token(mapOf("grant_type" to "refresh_token", "refresh_token" to r1)) // stolen copy replayed
+        assertFalse(oauth.isValid(a3))
+    }
+
+    @Test fun separateSessionsHaveSeparateFamilies() {
+        val oauth = newOAuth()
+        val (_, r1) = requireNotNull(exchange(oauth, requireNotNull(pair(oauth, oauth.newPairingCode()))))
+        val (a2, _) = requireNotNull(exchange(oauth, requireNotNull(pair(oauth, oauth.newPairingCode()))))
+        oauth.token(mapOf("grant_type" to "refresh_token", "refresh_token" to r1))
+        oauth.token(mapOf("grant_type" to "refresh_token", "refresh_token" to r1))
+        assertTrue("another client's session is untouched", oauth.isValid(a2))
     }
 
     @Test fun presentingAccessTokenAsRefreshDoesNotRevokeIt() {

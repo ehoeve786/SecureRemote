@@ -86,7 +86,11 @@ class McpHttpServer(
                         out.write(chunk, 0, n)
                     }
                     val body = out.toString(Charsets.UTF_8.name())
-                    val session = Session(id = "http", clientLabel = "mcp")
+                    // Per client, from a hash of its bearer token: audit can tell clients apart without storing the token.
+                    val who = java.security.MessageDigest.getInstance("SHA-256")
+                        .digest(call.request.headers[HttpHeaders.Authorization].orEmpty().toByteArray())
+                        .take(6).joinToString("") { "%02x".format(it) }
+                    val session = Session(id = "mcp-$who", clientLabel = "mcp")
                     val response = McpProtocol.handle(body, session, dispatcher)
 
                     if (response == null) {

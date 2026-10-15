@@ -11,6 +11,9 @@ import java.util.Base64
  * only) and rotating refresh tokens, after PocketPilot's AuthorizationServer. Approval is the
  * pairing code the app shows: only someone holding the phone can connect. Only Claude's redirect
  * URIs are accepted. Tokens are kept as SHA-256 hashes through [load]/[save].
+ *
+ * Every token belongs to a family. Replaying a rotated refresh token revokes its whole family,
+ * so a stolen refresh token ends the session instead of quietly coexisting with the live one.
  */
 class McpOAuth(
     load: () -> String?,
@@ -19,9 +22,18 @@ class McpOAuth(
 ) {
     private val random = SecureRandom()
 
-    /** Token hash → (kind "a"ccess / "r"efresh, expiry millis). */
-    private val tokens = HashMap<String, Pair<String, Long>>().apply {
-        load().orEmpty().lines().forEach { l -> l.split(' ').takeIf { it.size == 3 }?.let { put(it[0], it[1] to it[2].toLong()) } }
+    /** kind: 'a' access, 'r' live refresh, 'c' consumed refresh (kept to detect reuse). */
+    private data class Entry(val kind: Char, val expires: Long, val family: String)
+
+    /** Token hash → entry. Persisted as "hash kind expires family" lines. */
+    private val tokens = HashMap<String, Entry>().apply {
+        load().orEmpty().lines().forEach { l ->
+            val f = l.split(' ')
+            when (f.size) {
+                4 -> put(f[0], Entry(f[1][0], f[2].toLong(), f[3]))
+                3 -> put(f[0], Entry(f[1][0], f[2].toLong(), f[0])) // older format: no family
+            }
+        }
     }
 
     private class Code(val challenge: String, val redirect: String, val expires: Long)
@@ -38,7 +50,7 @@ class McpOAuth(
             .also { pairing = it; pairingExpires = now() + 10 * MINUTE; failures = 0 }
 
     @Synchronized
-    fun isValid(token: String) = tokens[sha(token)]?.let { it.first == "a" && it.second > now() } == true
+    fun isValid(token: String) = tokens[sha(token)]?.let { it.kind == 'a' && it.expires > now() } == true
 
     /** Disconnects every client. */
     @Synchronized
@@ -59,6 +71,7 @@ class McpOAuth(
     /** The token endpoint. Returns (access, refresh), or null for invalid_grant. */
     @Synchronized
     fun token(params: Map<String, String?>): Pair<String, String>? {
+        var family = token()
         when (params["grant_type"]) {
             "authorization_code" -> {
                 val c = params["code"]?.let(codes::remove) ?: return null
@@ -68,25 +81,31 @@ class McpOAuth(
                 if (!MessageDigest.isEqual(b64(sha256(verifier.toByteArray())).toByteArray(), c.challenge.toByteArray())) return null
             }
             "refresh_token" -> {
-                // Rotating: each refresh token works once. Only a live refresh token is consumed, so
-                // presenting an access token here cannot revoke it.
+                // Rotating: each refresh token works once. A consumed one coming back means it leaked,
+                // so the whole family is revoked. Access tokens are not refresh tokens and never match here.
                 val key = sha(params["refresh_token"] ?: return null)
                 val r = tokens[key] ?: return null
-                if (r.first != "r" || r.second < now()) return null
-                tokens.remove(key)
+                if (r.kind == 'c') {
+                    tokens.values.removeAll { it.family == r.family }
+                    persist()
+                    return null
+                }
+                if (r.kind != 'r' || r.expires < now()) return null
+                tokens[key] = r.copy(kind = 'c')
+                family = r.family
             }
             else -> return null
         }
         val access = token()
         val refresh = token()
-        tokens.values.removeAll { it.second < now() }
-        tokens[sha(access)] = "a" to now() + HOUR
-        tokens[sha(refresh)] = "r" to now() + 30 * DAY
+        tokens.values.removeAll { it.expires < now() }
+        tokens[sha(access)] = Entry('a', now() + HOUR, family)
+        tokens[sha(refresh)] = Entry('r', now() + 30 * DAY, family)
         persist()
         return access to refresh
     }
 
-    private fun persist() = save(tokens.entries.joinToString("\n") { "${it.key} ${it.value.first} ${it.value.second}" })
+    private fun persist() = save(tokens.entries.joinToString("\n") { "${it.key} ${it.value.kind} ${it.value.expires} ${it.value.family}" })
     private fun token() = b64(ByteArray(32).also(random::nextBytes))
     private fun sha(s: String) = sha256(s.toByteArray()).joinToString("") { "%02x".format(it) }
 

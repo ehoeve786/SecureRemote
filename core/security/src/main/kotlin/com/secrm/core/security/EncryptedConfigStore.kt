@@ -6,30 +6,38 @@ import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import java.security.GeneralSecurityException
 
-class EncryptedConfigStore(context: Context) {
-    private val prefs: SharedPreferences = try {
-        open(context)
-    } catch (e: GeneralSecurityException) {
-        // The Keystore key is unusable, so the stored values can never be decrypted. Start empty
-        // (the owner re-enters credentials) instead of crashing on every launch.
+class EncryptedConfigStore(private val context: Context) {
+    private var prefs: SharedPreferences? = openOrNull()
+
+    /**
+     * True when the Keystore key can no longer decrypt the store. Reads come back empty and writes
+     * are dropped until the owner agrees to [resetStorage], so the app should prompt before saving.
+     */
+    val keystoreLost get() = prefs == null
+
+    /** Deletes the unreadable store (credentials must be re-entered), then opens a fresh one. */
+    @Synchronized
+    fun resetStorage() {
         context.deleteSharedPreferences(FILE)
-        open(context)
+        prefs = openOrNull()
     }
 
-    private fun open(context: Context): SharedPreferences {
+    private fun openOrNull(): SharedPreferences? = try {
         val key = MasterKey.Builder(context).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build()
-        return EncryptedSharedPreferences.create(
+        EncryptedSharedPreferences.create(
             context, FILE, key,
             EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
             EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
         )
+    } catch (e: GeneralSecurityException) {
+        null
     }
 
     private companion object { const val FILE = "secrm_secure_prefs" }
 
-    fun put(k: String, v: String) { prefs.edit().putString(k, v).apply() }
-    fun get(k: String): String? = prefs.getString(k, null)
-    fun remove(k: String) { prefs.edit().remove(k).apply() }
+    fun put(k: String, v: String) { prefs?.edit()?.putString(k, v)?.apply() }
+    fun get(k: String): String? = prefs?.getString(k, null)
+    fun remove(k: String) { prefs?.edit()?.remove(k)?.apply() }
 
     var sshHost: String?
         get() = get("ssh.host"); set(v) = put("ssh.host", v ?: "")

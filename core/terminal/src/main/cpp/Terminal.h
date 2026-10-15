@@ -19,7 +19,10 @@
 
 #include <jni.h>
 #include <vterm.h>
+#include <atomic>
+#include <cstdlib>
 #include <mutex>
+#include <thread>
 
 template<typename T>
 class ScopedLocalRef {
@@ -184,6 +187,7 @@ private:
     // mutex. Java callbacks invoked from libvterm must not synchronously call
     // back into Terminal methods; post/defer any work that needs native state.
     mutable std::mutex mLock;
+    mutable std::atomic<std::thread::id> mLockHolder{};
 };
 
 #endif // TERMSCREEN_TERMINAL_H
