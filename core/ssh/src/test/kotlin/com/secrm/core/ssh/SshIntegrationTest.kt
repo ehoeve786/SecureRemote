@@ -109,7 +109,7 @@ class SshIntegrationTest {
         }
     }
 
-    @Test fun sftpWithoutAConnectionFailsCleanly() = runBlocking {
+    @Test fun sftpWithoutAConnectionFailsCleanly() {
         assertThrows(IllegalStateException::class.java) { runBlocking { SftpClient(ssh).home() } }
     }
 
