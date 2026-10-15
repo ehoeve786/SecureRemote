@@ -94,12 +94,18 @@ class SshIntegrationTest {
         assertTrue("connect failed: ${ssh.state.value} :: ${ssh.recentLog().replace("\n", " | ").take(1500)}", ok)
     }
 
+    private suspend fun shellOrFail() {
+        val ok = ssh.ensureShell()
+        println("SSHDBG shell=$ok alive=${ssh.activeSession() != null} log=${ssh.recentLog().replace("\n", " | ").take(1500)}")
+        assertTrue("shell did not open", ok)
+    }
+
     private fun config(pw: String = password) =
         SshConfig(host = "127.0.0.1", port = port, username = user, auth = SshAuth.Password(pw), connectTimeoutMs = 5_000)
 
     @Test fun connectsWithPasswordAndRunsShellCommands() = runBlocking {
         connectOrFail()
-        assertTrue(ssh.ensureShell())
+        shellOrFail()
         val shell = Pump(ssh.shellInputStream()!!)
         ssh.shellOutputStream()!!.apply { write("echo MARK\$((6*7))\n".toByteArray()); flush() }
         shell.expect("MARK42")
@@ -107,11 +113,12 @@ class SshIntegrationTest {
 
     @Test fun openingSftpLeavesTheTerminalSessionAlive() = runBlocking {
         connectOrFail()
-        assertTrue(ssh.ensureShell())
+        shellOrFail()
         val shell = Pump(ssh.shellInputStream()!!)
         val typed = ssh.shellOutputStream()!!
         val sftp = SftpClient(ssh)
         try {
+            println("SSHDBG before-sftp alive=${ssh.activeSession() != null} log=${ssh.recentLog().replace("\n", " | ").take(1500)}")
             val home = sftp.home()
             assertTrue(sftp.list(home).any { it.name == "hello.txt" })
             val file = SftpClient.join(home, "hello.txt")
