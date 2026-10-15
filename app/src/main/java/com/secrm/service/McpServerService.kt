@@ -58,7 +58,7 @@ class McpServerService : Service() {
         server = McpHttpServer(
             dispatcher = app.dispatcher,
             auth = McpAuth(7823, 7824, local,
-                setOf("*.ts.net", "*.trycloudflare.com", "*.ngrok-free.app")) { it == bearer || app.oauth.isValid(it) },
+                setOf("*.ts.net")) { it == bearer || app.oauth.isValid(it) },
             oauth = app.oauth
         ).also { it.start() }
     }
