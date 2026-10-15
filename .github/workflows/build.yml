@@ -81,7 +81,11 @@ jobs:
           arch: x86_64
           target: google_apis
           disable-animations: true
-          script: gradle :core:security:connectedDebugAndroidTest --no-daemon
+          script: |
+            gradle :core:security:connectedDebugAndroidTest :core:terminal:connectedDebugAndroidTest --no-daemon --continue
+            status=$?
+            "$ANDROID_HOME/platform-tools/adb" logcat -d -s TerminalBench:I | grep -o 'BENCH.*' | sed 's/^/::notice::/'
+            exit $status
       - if: failure()
         run: |
           find . -path '*/build/outputs/androidTest-results/*' -name '*.xml' -exec grep -h -A3 '<failure' {} + | head -40 | sed 's/^/::error::/'
