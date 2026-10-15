@@ -24,8 +24,18 @@ jobs:
       - name: Go vet
         working-directory: core/gonet/go
         run: go vet ./...
+      - name: Go tests
+        working-directory: core/gonet/go
+        run: go test ./...
       - uses: gradle/actions/setup-gradle@v5
         with: { gradle-version: "9.7.1" }
+      # JVM unit tests: OAuth/MCP auth and protocol, the HTTP server end to end, and SSH/SFTP against an
+      # in-process server. Instrumented tests (EncryptedConfigStore on a device) are not run here.
+      - name: Unit tests
+        run: set -o pipefail; gradle testDebugUnitTest --no-daemon --continue 2>&1 | tee test.log
+      - if: failure()
+        run: |
+          grep -E '^e: |FAILED|tests completed|What went wrong' -A2 test.log | head -40 | sed 's/^/::error::/'
       - name: Signing key
         env: { KS: "${{ secrets.SIGNING_KEYSTORE }}" }
         run: |

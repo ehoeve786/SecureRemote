@@ -51,7 +51,7 @@ object McpProtocol {
         val root = runCatching { Json.parseToJsonElement(body).jsonObject }.getOrNull()
             ?: return errorResponse(JsonNull, -32700, "Parse error")
         val id = root["id"]
-        val method = root["method"]?.jsonPrimitive?.contentOrNull
+        val method = (root["method"] as? JsonPrimitive)?.contentOrNull
             ?: return errorResponse(id, -32600, "Invalid request")
         val params = root["params"] as? JsonObject
 
@@ -103,7 +103,7 @@ object McpProtocol {
         session: Session,
         dispatcher: CallDispatcher
     ): String {
-        val name = params?.get("name")?.jsonPrimitive?.contentOrNull
+        val name = (params?.get("name") as? JsonPrimitive)?.contentOrNull
             ?: return errorResponse(id, -32602, "Missing tool name")
         val args = params["arguments"] as? JsonObject ?: buildJsonObject {}
         val result = dispatcher.dispatch(session, name, args)
