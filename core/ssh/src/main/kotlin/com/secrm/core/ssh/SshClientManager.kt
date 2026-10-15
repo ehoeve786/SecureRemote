@@ -213,18 +213,22 @@ class SshClientManager {
     suspend fun execOnce(command: String): String = withContext(Dispatchers.IO) {
         val s = session ?: error("No active SSH session")
         val ch = s.openChannel("exec") as com.jcraft.jsch.ChannelExec
-        // Cancelling the caller disconnects the channel, which unblocks the read below.
-        val onCancel = currentCoroutineContext().job.invokeOnCompletion(onCancelling = true) { ch.disconnect() }
         val out = ByteArrayOutputStream()
         val err = ByteArrayOutputStream()
-        try {
-            ch.setCommand(command)
-            ch.setErrStream(err)
-            // Take the stream before connecting, or JSch drops the command's first output.
-            val input = ch.inputStream
-            ch.connect(10_000)
-            input.copyTo(out)
-        } finally { onCancel.dispose(); ch.disconnect() }
+        coroutineScope {
+            // Cancelling the caller runs this watcher, which disconnects the channel and unblocks the read below.
+            val watcher = launch(start = CoroutineStart.UNDISPATCHED) {
+                try { awaitCancellation() } finally { ch.disconnect() }
+            }
+            try {
+                ch.setCommand(command)
+                ch.setErrStream(err)
+                // Take the stream before connecting, or JSch drops the command's first output.
+                val input = ch.inputStream
+                ch.connect(10_000)
+                input.copyTo(out)
+            } finally { watcher.cancel(); ch.disconnect() }
+        }
         buildString {
             append(out.toString(Charsets.UTF_8.name()))
             val e = err.toString(Charsets.UTF_8.name())
