@@ -55,6 +55,9 @@ class SshClientManager {
     /** A second, independent session to the connected host (null if not connected). Caller disconnects it. */
     suspend fun openAuxSession(): Session? = withContext(Dispatchers.IO) { if (activeSession() == null) null else lastCfg?.let(::newSession)?.also { synchronized(aux) { aux += it } } }
 
+    /** Disconnects an aux session from [openAuxSession] and forgets it, so the list does not grow. */
+    fun releaseAux(s: Session) { runCatching { s.disconnect() }; synchronized(aux) { aux.remove(s) } }
+
     /** Resolves [SshConfig.via] to its tunnel's proxy; throws, in plain words, if it can't come up. */
     var proxy: (String) -> Proxy = { error("No private network named $it") }
 
@@ -205,14 +208,18 @@ class SshClientManager {
     suspend fun execOnce(command: String): String = withContext(Dispatchers.IO) {
         val s = session ?: error("No active SSH session")
         val ch = s.openChannel("exec") as com.jcraft.jsch.ChannelExec
-        ch.setCommand(command)
+        // Cancelling the caller disconnects the channel, which unblocks the read below.
+        val onCancel = currentCoroutineContext().job.invokeOnCompletion(onCancelling = true) { ch.disconnect() }
         val out = ByteArrayOutputStream()
         val err = ByteArrayOutputStream()
-        ch.setErrStream(err)
-        // Take the stream before connecting, or JSch drops the command's first output.
-        val input = ch.inputStream
-        ch.connect(10_000)
-        try { input.copyTo(out) } finally { ch.disconnect() }
+        try {
+            ch.setCommand(command)
+            ch.setErrStream(err)
+            // Take the stream before connecting, or JSch drops the command's first output.
+            val input = ch.inputStream
+            ch.connect(10_000)
+            input.copyTo(out)
+        } finally { onCancel.dispose(); ch.disconnect() }
         buildString {
             append(out.toString(Charsets.UTF_8.name()))
             val e = err.toString(Charsets.UTF_8.name())

@@ -41,7 +41,7 @@ class SftpClient(private val ssh: SshClientManager) {
         }
     }
 
-    fun close() { runCatching { channel?.disconnect() }; runCatching { aux?.disconnect() }; channel = null; aux = null }
+    fun close() { runCatching { channel?.disconnect() }; aux?.let(ssh::releaseAux); channel = null; aux = null }
 
     suspend fun home(): String = run { it.realpath(".") }
 
