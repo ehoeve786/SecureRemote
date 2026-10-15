@@ -35,13 +35,17 @@ class WireGuardTunnel(
         // Deriving the key loads the Go library, so it stays off the thread that builds this.
         scope.launch(Dispatchers.IO) {
             loadConfig()?.let { c ->
-                hasConfig = true
-                publicKey = runCatching { lib(); Srnet.publicKeyOfConfig(c) }.getOrNull()
+                val key = runCatching { lib(); Srnet.publicKeyOfConfig(c) }.getOrNull()
+                // Publish under the same lock as configure(), and only if no newer config arrived meanwhile.
+                synchronized(this@WireGuardTunnel) {
+                    if (loadConfig() == c) { hasConfig = true; publicKey = key }
+                }
             }
         }
     }
 
     /** Checks and saves a wg-quick config; returns the problem in plain words, or null. Restarts a running tunnel. */
+    @Synchronized
     fun configure(config: String): String? {
         val key = runCatching { lib(); Srnet.publicKeyOfConfig(config) }
         key.exceptionOrNull()?.let { return it.message ?: it.toString() }
@@ -53,6 +57,7 @@ class WireGuardTunnel(
     }
 
     /** Forgets the config and its private key. */
+    @Synchronized
     fun forget() {
         stop()
         saveConfig(null)

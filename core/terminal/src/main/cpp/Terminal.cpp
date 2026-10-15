@@ -154,6 +154,30 @@ static void argumentError(JNIEnv* env, const char* message) {
     if (type.get()) env->ThrowNew(type, message);
 }
 
+// Native entry points take mLock, and libvterm callbacks run under it. A callback that calls back into
+// native on the same thread would re-lock this non-recursive mutex and deadlock, so fail fast instead.
+class LockGuard {
+public:
+    LockGuard(std::mutex& m, std::atomic<std::thread::id>& holder) : mMutex(m), mHolder(holder) {
+        if (mHolder.load() == std::this_thread::get_id()) {
+            LOGE("Re-entrant terminal call from a callback; aborting instead of deadlocking");
+            std::abort();
+        }
+        mMutex.lock();
+        mHolder.store(std::this_thread::get_id());
+    }
+    ~LockGuard() {
+        mHolder.store(std::thread::id());
+        mMutex.unlock();
+    }
+    LockGuard(const LockGuard&) = delete;
+    LockGuard& operator=(const LockGuard&) = delete;
+
+private:
+    std::mutex& mMutex;
+    std::atomic<std::thread::id>& mHolder;
+};
+
 // Terminal implementation
 Terminal::Terminal(JNIEnv* env, jobject callbacks, int rows, int cols)
     : mRows(rows), mCols(cols) {
@@ -264,7 +288,7 @@ Terminal::Terminal(JNIEnv* env, jobject callbacks, int rows, int cols)
 }
 
 Terminal::~Terminal() {
-    std::scoped_lock lock(mLock);
+    LockGuard lock(mLock, mLockHolder);
 
     if (mVt) {
         vterm_free(mVt);
@@ -284,7 +308,7 @@ Terminal::~Terminal() {
 
 // Input handling - KEY METHOD
 int Terminal::writeInput(const uint8_t* data, size_t length) {
-    std::scoped_lock lock(mLock);
+    LockGuard lock(mLock, mLockHolder);
 
     if (!mVt) {
         LOGE("writeInput: VTerm not initialized");
@@ -308,7 +332,7 @@ int Terminal::writeInput(const uint8_t* data, size_t length) {
 
 // Resize
 int Terminal::resize(int rows, int cols) {
-    std::scoped_lock lock(mLock);
+    LockGuard lock(mLock, mLockHolder);
 
     // Scrollback callbacks during resize still inspect the old lineinfo array.
     if (mVt) {
@@ -325,7 +349,7 @@ int Terminal::resize(int rows, int cols) {
 
 // Color configuration
 int Terminal::setPaletteColors(const uint32_t* colors, int count) {
-    std::scoped_lock lock(mLock);
+    LockGuard lock(mLock, mLockHolder);
 
     if (!mVt) {
         LOGE("setPaletteColors: VTerm not initialized");
@@ -357,7 +381,7 @@ int Terminal::setPaletteColors(const uint32_t* colors, int count) {
 }
 
 int Terminal::setBoldHighbright(int enabled) {
-    std::scoped_lock lock(mLock);
+    LockGuard lock(mLock, mLockHolder);
 
     if (!mVt) {
         LOGE("setBoldHighbright: VTerm not initialized");
@@ -375,7 +399,7 @@ int Terminal::setBoldHighbright(int enabled) {
 }
 
 int Terminal::setDefaultColors(uint32_t fgColor, uint32_t bgColor) {
-    std::scoped_lock lock(mLock);
+    LockGuard lock(mLock, mLockHolder);
 
     if (!mVt) {
         LOGE("setDefaultColors: VTerm not initialized");
@@ -409,7 +433,7 @@ int Terminal::setDefaultColors(uint32_t fgColor, uint32_t bgColor) {
 
 // Keyboard input handlers
 void Terminal::paste(JNIEnv* env, jbyteArray data) {
-    std::scoped_lock lock(mLock);
+    LockGuard lock(mLock, mLockHolder);
     if (!mVt) return;
     vterm_keyboard_start_paste(mVt);
     const jsize size = env->GetArrayLength(data);
@@ -425,7 +449,7 @@ void Terminal::paste(JNIEnv* env, jbyteArray data) {
 }
 
 bool Terminal::dispatchKey(int modifiers, int key) {
-    std::scoped_lock lock(mLock);
+    LockGuard lock(mLock, mLockHolder);
 
     if (!mVt) {
         return false;
@@ -441,7 +465,7 @@ bool Terminal::dispatchKey(int modifiers, int key) {
 }
 
 bool Terminal::dispatchCharacter(int modifiers, int codepoint) {
-    std::scoped_lock lock(mLock);
+    LockGuard lock(mLock, mLockHolder);
 
     if (!mVt) {
         return false;
@@ -511,7 +535,7 @@ static void unpackCell(const jint* in, VTermScreenCell& cell) {
 // A header consists of 16-byte row/column/count/continuation descriptors.
 // Cell records follow the fixed header. All requests are validated before writes.
 int Terminal::getCells(JNIEnv* env, jobject output, int requests) {
-    std::scoped_lock lock(mLock);
+    LockGuard lock(mLock, mLockHolder);
     auto* bytes = writableBuffer(env, output, BUFFER_BYTES);
     if (!bytes || requests < 0 || requests > HEADER_BYTES / 16) {
         argumentError(env, "Invalid batch buffer or request count"); return 0;
@@ -1104,6 +1128,7 @@ JNIEXPORT jint JNICALL
 Java_org_connectbot_terminal_TerminalNative_nativeResize(JNIEnv* env, jobject /* thiz */,
                                                          jlong ptr, jint rows, jint cols) {
     auto* term = reinterpret_cast<Terminal*>(ptr);
+    if (!term) return -1;
     if (rows <= 0 || cols <= 0 || rows > std::numeric_limits<int>::max() / cols ||
         cols > std::numeric_limits<int>::max() / CELL_STRIDE) {
         argumentError(env, "Invalid terminal dimensions");
@@ -1116,30 +1141,32 @@ JNIEXPORT jboolean JNICALL
 Java_org_connectbot_terminal_TerminalNative_nativeDispatchKey(JNIEnv* /* env */, jobject /* thiz */,
                                                               jlong ptr, jint modifiers, jint key) {
     auto* term = reinterpret_cast<Terminal*>(ptr);
-    return term->dispatchKey(modifiers, key);
+    return term && term->dispatchKey(modifiers, key);
 }
 
 JNIEXPORT jboolean JNICALL
 Java_org_connectbot_terminal_TerminalNative_nativeDispatchCharacter(JNIEnv* /* env */, jobject /* thiz */,
                                                                     jlong ptr, jint modifiers, jint character) {
     auto* term = reinterpret_cast<Terminal*>(ptr);
-    return term->dispatchCharacter(modifiers, character);
+    return term && term->dispatchCharacter(modifiers, character);
 }
 
 JNIEXPORT void JNICALL
 Java_org_connectbot_terminal_TerminalNative_nativePaste(JNIEnv* env, jobject, jlong ptr, jbyteArray data) {
-    reinterpret_cast<Terminal*>(ptr)->paste(env, data);
+    if (auto* term = reinterpret_cast<Terminal*>(ptr)) term->paste(env, data);
 }
 
 JNIEXPORT jint JNICALL
 Java_org_connectbot_terminal_TerminalNative_nativeGetCells(JNIEnv* env, jobject, jlong ptr, jobject buffer, jint requests) {
-    return reinterpret_cast<Terminal*>(ptr)->getCells(env, buffer, requests);
+    auto* term = reinterpret_cast<Terminal*>(ptr);
+    return term ? term->getCells(env, buffer, requests) : 0;
 }
 
 JNIEXPORT jint JNICALL
 Java_org_connectbot_terminal_TerminalNative_nativeSetPaletteColors(JNIEnv* env, jobject /* thiz */,
                                                                    jlong ptr, jintArray colors, jint count) {
     auto* term = reinterpret_cast<Terminal*>(ptr);
+    if (!term) return -1;
 
     if (count < 0 || count > 16 || count > env->GetArrayLength(colors)) {
         argumentError(env, "Invalid palette count");
@@ -1157,6 +1184,7 @@ JNIEXPORT jint JNICALL
 Java_org_connectbot_terminal_TerminalNative_nativeSetDefaultColors(JNIEnv* /* env */, jobject /* thiz */,
                                                                    jlong ptr, jint fgColor, jint bgColor) {
     auto* term = reinterpret_cast<Terminal*>(ptr);
+    if (!term) return -1;
     return term->setDefaultColors(static_cast<uint32_t>(fgColor), static_cast<uint32_t>(bgColor));
 }
 
@@ -1166,6 +1194,7 @@ JNIEXPORT jint JNICALL
 Java_org_connectbot_terminal_TerminalNative_nativeSetBoldHighbright(JNIEnv* /* env */, jobject /* thiz */,
                                                                      jlong ptr, jboolean enabled) {
     auto* term = reinterpret_cast<Terminal*>(ptr);
+    if (!term) return -1;
     return term->setBoldHighbright(enabled ? 1 : 0);
 }
 
