@@ -12,7 +12,11 @@ import java.util.Base64
  * pairing code the app shows: only someone holding the phone can connect. Only Claude's redirect
  * URIs are accepted. Tokens are kept as SHA-256 hashes through [load]/[save].
  */
-class McpOAuth(load: () -> String?, private val save: (String) -> Unit) {
+class McpOAuth(
+    load: () -> String?,
+    private val save: (String) -> Unit,
+    private val now: () -> Long = System::currentTimeMillis,
+) {
     private val random = SecureRandom()
 
     /** Token hash → (kind "a"ccess / "r"efresh, expiry millis). */
@@ -63,9 +67,12 @@ class McpOAuth(load: () -> String?, private val save: (String) -> Unit) {
                 if (!MessageDigest.isEqual(b64(sha256(verifier.toByteArray())).toByteArray(), c.challenge.toByteArray())) return null
             }
             "refresh_token" -> {
-                // Rotating: each refresh token works once.
-                val r = tokens.remove(sha(params["refresh_token"] ?: return null)) ?: return null
+                // Rotating: each refresh token works once. Only a live refresh token is consumed, so
+                // presenting an access token here cannot revoke it.
+                val key = sha(params["refresh_token"] ?: return null)
+                val r = tokens[key] ?: return null
                 if (r.first != "r" || r.second < now()) return null
+                tokens.remove(key)
             }
             else -> return null
         }
@@ -88,7 +95,6 @@ class McpOAuth(load: () -> String?, private val save: (String) -> Unit) {
         private const val HOUR = 60 * MINUTE
         private const val DAY = 24 * HOUR
         private const val ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
-        private fun now() = System.currentTimeMillis()
         private fun sha256(b: ByteArray) = MessageDigest.getInstance("SHA-256").digest(b)
         private fun b64(b: ByteArray) = Base64.getUrlEncoder().withoutPadding().encodeToString(b)
 
