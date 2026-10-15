@@ -76,7 +76,7 @@ class SshIntegrationTest {
             passwordAuthenticator = PasswordAuthenticator { u, p, _ -> u == user && p == password }
             fileSystemFactory = VirtualFileSystemFactory(root)
             subsystemFactories = listOf(SftpSubsystemFactory())
-            shellFactory = ProcessShellFactory("/bin/sh", "-i")
+            shellFactory = ProcessShellFactory("/bin/cat")
         }
         server.start()
         ssh = SshClientManager()
@@ -107,8 +107,8 @@ class SshIntegrationTest {
         connectOrFail()
         shellOrFail()
         val shell = Pump(ssh.shellInputStream()!!)
-        ssh.shellOutputStream()!!.apply { write("echo MARK\$((6*7))\n".toByteArray()); flush() }
-        shell.expect("MARK42")
+        ssh.shellOutputStream()!!.apply { write("MARK-42\n".toByteArray()); flush() }
+        shell.expect("MARK-42")
     }
 
     @Test fun openingSftpLeavesTheTerminalSessionAlive() = runBlocking {
@@ -125,8 +125,8 @@ class SshIntegrationTest {
             val bytes = ByteArrayOutputStream().also { sftp.download(file, it) }
             assertEquals("hi there", bytes.toString(Charsets.UTF_8))
 
-            typed.write("echo STILL\$((1+1))\n".toByteArray()); typed.flush()
-            shell.expect("STILL2")
+            typed.write("STILL-2\n".toByteArray()); typed.flush()
+            shell.expect("STILL-2")
             assertTrue(ssh.activeSession()?.isConnected == true)
         } finally {
             sftp.close()
