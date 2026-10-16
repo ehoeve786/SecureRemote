@@ -22,6 +22,13 @@ object PluginProtocol {
     /** Asks the host to wait this long (ms) for the action; the host may ignore it. */
     const val REQUESTED_TIMEOUT_NEVER = 3_600_000
 
+    /** Packages of the macro hosts this plugin talks to. Only these may receive results or open the editor. */
+    val HOST_PACKAGES = setOf(
+        "net.dinglisch.android.taskerm", // Tasker
+        "net.dinglisch.android.tasker",
+        "com.arlosoft.macrodroid", // MacroDroid
+    )
+
     /** Output variables, named as termux-tasker names them so existing macros work unchanged. */
     const val VAR_STDOUT = "%stdout"
     const val VAR_STDERR = "%stderr"
@@ -59,15 +66,19 @@ object PluginProtocol {
      */
     fun signalFinish(context: Context, fire: Intent, resultCode: Int, vars: Bundle?) {
         val completion = Intent.parseUri(fire.getStringExtra(EXTRA_COMPLETION_INTENT) ?: return, Intent.URI_INTENT_SCHEME)
+        // The completion intent is text from the sender, so it may only reach the host's own packages.
+        // A selector or a target outside them would turn this into an intent redirect or a leak of the output.
+        val pkg = completion.getStringExtra(CALL_PACKAGE) ?: completion.component?.packageName ?: completion.`package`
+        if (completion.selector != null || pkg == null || pkg !in HOST_PACKAGES) return
         completion.putExtra(EXTRA_RESULT_CODE, resultCode)
         vars?.let { completion.putExtra(EXTRA_VARIABLES, it) }
-        val pkg = completion.getStringExtra(CALL_PACKAGE)
         val cls = completion.getStringExtra(CALL_SERVICE)
-        if (pkg != null && cls != null) {
+        if (cls != null) {
             completion.component = android.content.ComponentName(pkg, cls)
             if (completion.getBooleanExtra(CALL_FOREGROUND, false)) context.startForegroundService(completion)
             else context.startService(completion)
         } else {
+            completion.`package` = pkg
             context.sendBroadcast(completion)
         }
     }
