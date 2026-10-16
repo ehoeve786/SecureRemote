@@ -2229,6 +2229,8 @@ private fun DrawScope.drawCurlyUnderline(
     val wavelength = charWidth / CURLY_UNDERLINE_CYCLES_PER_CHAR
     val amplitude = CURLY_UNDERLINE_AMPLITUDE
     val halfWave = wavelength / 2
+    // A zero-width glyph would make the zigzag loop below never advance.
+    if (halfWave <= 0f) return
 
     val baseY = y + 3f
 
