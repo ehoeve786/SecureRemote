@@ -56,8 +56,7 @@ private fun NavHostController.goTab(route: String) = navigate(route) {
 @Composable
 fun SecrmNavHost(app: SecureRemoteApp) {
     val nav = rememberNavController()
-    val sshState by app.ssh.state.collectAsState()
-    val connected = sshState is SshState.Connected
+    val connected = app.sessions.connected.collectAsState().value.isNotEmpty()
     val current = nav.currentBackStackEntryAsState().value?.destination?.route
 
     Scaffold(
@@ -101,7 +100,7 @@ fun SecrmNavHost(app: SecureRemoteApp) {
                     app,
                     onOpenHosts = { nav.goTab(Routes.Hosts) },
                     onOpenTerminal = { dir ->
-                        app.terminal()?.send("cd '" + dir.replace("'", "'\\''") + "'\r")
+                        app.sessions.current.value?.terminal()?.send("cd '" + dir.replace("'", "'\\''") + "'\r")
                         nav.goTab(Routes.Terminal)
                     },
                 )

@@ -18,17 +18,18 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
+import com.secrm.HostSession
 import com.secrm.SecureRemoteApp
+import com.secrm.ui.HostPager
 import com.secrm.core.terminal.TerminalBridge
 import com.secrm.core.terminal.TerminalSurface
 import com.secrm.design.*
 
-/** Terminal tab: the live SSH shell. The shell belongs to the session ([SecureRemoteApp.terminal]), so it survives tab switches. */
+/** Terminal tab: a live SSH shell per connected host, swipe between them. Each shell survives tab switches. */
 @Composable
 fun TerminalScreen(app: SecureRemoteApp, onOpenHosts: () -> Unit, onOpenFiles: () -> Unit) {
-    val sshState by app.ssh.state.collectAsState()
-    val bridge = if (sshState is com.secrm.core.ssh.SshState.Connected) app.terminal() else null
-    if (bridge == null) {
+    val hosts by app.sessions.connected.collectAsState()
+    if (hosts.isEmpty()) {
         com.secrm.ui.common.StateMessage(
             SecrmIcons.Terminal, "No active connection",
             "Connect to a host to open a shell.",
@@ -36,6 +37,12 @@ fun TerminalScreen(app: SecureRemoteApp, onOpenHosts: () -> Unit, onOpenFiles: (
         )
         return
     }
+    HostPager(app, hosts) { host -> TerminalPage(host, onOpenFiles) }
+}
+
+@Composable
+private fun TerminalPage(host: HostSession, onOpenFiles: () -> Unit) {
+    val bridge = host.terminal() ?: return
     var ready by remember(bridge) { mutableStateOf<Boolean?>(null) }
     var selecting by remember { mutableStateOf<String?>(null) }
     selecting?.let { TranscriptSelector(it) { selecting = null } }
@@ -49,7 +56,7 @@ fun TerminalScreen(app: SecureRemoteApp, onOpenHosts: () -> Unit, onOpenFiles: (
             verticalAlignment = Alignment.CenterVertically
         ) {
             ModeSwitch(onFiles = onOpenFiles)
-            Text(app.ssh.target.orEmpty(), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            Text(host.target, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f).padding(horizontal = Space.md))
             TextButton({ selecting = bridge.transcript() }) { Text("Select") }

@@ -16,7 +16,6 @@ import androidx.core.content.ContextCompat
 import com.secrm.R
 import com.secrm.SecureRemoteApp
 import com.secrm.core.ssh.SshAuth
-import com.secrm.core.ssh.SshClientManager
 import com.secrm.core.ssh.tools.AuthMethod
 import com.secrm.core.ssh.tools.SavedConnection
 import com.secrm.core.ssh.tools.connectSaved
@@ -98,7 +97,7 @@ class RunCommandService : Service() {
         val app = application as SecureRemoteApp
         val conn = app.connections.find(s.connection) ?: return failure("No saved connection named ${s.connection}")
         // A separate client, so this doesn't replace or drop the app's live session.
-        val ssh = SshClientManager().apply { proxy = app.ssh.proxy }
+        val ssh = app.newClient()
         return try {
             if (conn.authMethod == AuthMethod.AGENT && !unlockVault(app)) return failure("Bitwarden is locked. Unlock it and run again.")
             val auth = authFor(conn) ?: return failure("No key or vault item for ${conn.name}")

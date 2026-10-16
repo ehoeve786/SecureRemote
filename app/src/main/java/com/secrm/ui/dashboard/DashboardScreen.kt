@@ -44,20 +44,15 @@ fun DashboardScreen(
     onOpenShell: () -> Unit,
     onOpenFiles: () -> Unit,
 ) {
-    val sshState by app.ssh.state.collectAsState()
+    val hosts by app.sessions.connected.collectAsState()
     val scope = rememberCoroutineScope()
     val activity = LocalContext.current as FragmentActivity
 
     var connections by remember { mutableStateOf(app.connections.list()) }
     var editing by remember { mutableStateOf<SavedConnection?>(null) }
     var showForm by remember { mutableStateOf(false) }
-    var activeName by remember { mutableStateOf(if (app.ssh.state.value is SshState.Connected) app.ssh.connectedName else null) }
     var connecting by remember { mutableStateOf<String?>(null) }
     var connectError by remember { mutableStateOf<String?>(null) }
-
-    LaunchedEffect(sshState) {
-        activeName = if (sshState is SshState.Connected) app.ssh.connectedName else null
-    }
 
     Scaffold(
         topBar = {
@@ -66,7 +61,7 @@ fun DashboardScreen(
                     Column {
                         Text("Hosts", style = MaterialTheme.typography.titleLarge)
                         Text(
-                            "${connections.size} saved · ${if (sshState is SshState.Connected) "1 connected" else "none connected"}",
+                            "${connections.size} saved · ${if (hosts.isEmpty()) "none connected" else "${hosts.size} connected"}",
                             style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
@@ -120,23 +115,17 @@ fun DashboardScreen(
                     }
 
                     items(connections, key = { it.name }) { conn ->
+                        val live = hosts.firstOrNull { it.name == conn.name }
                         ConnectionCard(
                             conn = conn,
                             isConnecting = connecting == conn.name,
-                            state = if (activeName == conn.name && sshState is SshState.Connected)
-                                ConnectionVisual.Up
-                            else if (activeName == conn.name && sshState is SshState.Connecting)
-                                ConnectionVisual.Connecting
-                            else if (activeName == conn.name && sshState is SshState.Error)
-                                ConnectionVisual.Error
-                            else ConnectionVisual.Idle,
-                            isActive = activeName == conn.name && sshState is SshState.Connected,
-                            serverVersion = (sshState as? SshState.Connected)?.serverVersion.takeIf { activeName == conn.name },
+                            state = if (live != null) ConnectionVisual.Up else ConnectionVisual.Idle,
+                            isActive = live != null,
+                            serverVersion = (live?.ssh?.state?.value as? SshState.Connected)?.serverVersion,
                             onConnect = {
                                 scope.launch {
                                     connectError = null
                                     connecting = conn.name
-                                    activeName = conn.name
                                     val auth: SshAuth? = when (conn.authMethod) {
                                         AuthMethod.PASSWORD -> {
                                             if (conn.password.isBlank()) null
@@ -161,36 +150,27 @@ fun DashboardScreen(
                                     }
                                     if (auth == null) {
                                         connectError = connectError ?: "Missing credentials for ${conn.name}"
-                                        activeName = null
                                         connecting = null
                                         return@launch
                                     }
-                                    val ok = app.ssh.connectSaved(conn, auth, app.connections)
+                                    val err = app.sessions.connect(conn, auth)
                                     connections = app.connections.list() // host or key may have been updated
                                     connecting = null
-                                    if (ok) {
+                                    if (err == null) {
                                         onOpenShell()
                                     } else {
-                                        val st = app.ssh.state.value
-                                        connectError = when (st) {
-                                            is SshState.Error -> st.message
-                                            else -> "SSH connect failed"
-                                        }
-                                        activeName = null
+                                        connectError = err
                                     }
                                 }
                             },
-                            onShell = onOpenShell,
-                            onFiles = onOpenFiles,
-                            onDisconnect = { scope.launch { app.ssh.disconnect() }; activeName = null },
+                            onShell = { app.sessions.select(conn.name); onOpenShell() },
+                            onFiles = { app.sessions.select(conn.name); onOpenFiles() },
+                            onDisconnect = { app.sessions.close(conn.name) },
                             onEdit = { editing = conn; showForm = true },
                             onDelete = {
                                 app.connections.delete(conn.name)
                                 connections = app.connections.list()
-                                if (activeName == conn.name) {
-                                    scope.launch { app.ssh.disconnect() }
-                                    activeName = null
-                                }
+                                app.sessions.close(conn.name)
                             }
                         )
                     }
