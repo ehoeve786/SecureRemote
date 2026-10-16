@@ -207,7 +207,7 @@ static int putglyph(VTermGlyphInfo *info, VTermPos pos, void *user)
       (color->rgb.red << 16) | (color->rgb.green << 8) | color->rgb.blue;
   }
 
-  for(int col = 1; col < info->width; col++) {
+  for(int col = 1; col < info->width && pos.col + col < screen->cols; col++) {
     ScreenCell *continuation = getcell(screen, pos.row, pos.col + col);
     continuation->chars[0] = (uint32_t)-1;
     continuation->pen = screen->pen;
