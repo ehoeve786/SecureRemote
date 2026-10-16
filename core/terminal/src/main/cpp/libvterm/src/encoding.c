@@ -46,8 +46,13 @@ static void decode_utf8(VTermEncoding *enc, void *data_,
       return;
 
     else if(c >= 0x20 && c < 0x7f) {
-      if(data->bytes_remaining)
+      if(data->bytes_remaining) {
+        // This byte needs two slots: the invalid marker, then itself. With one left, leave the byte
+        // for the next call, which starts from the same state.
+        if(*cpi + 1 >= cplen)
+          return;
         cp[(*cpi)++] = UNICODE_INVALID;
+      }
 
       cp[(*cpi)++] = c;
 #ifdef DEBUG_PRINT_UTF8
