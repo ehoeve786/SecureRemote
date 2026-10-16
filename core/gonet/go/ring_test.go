@@ -59,3 +59,25 @@ func TestWriteToMirrorsLinesToFile(t *testing.T) {
 		t.Errorf("file = %q", b)
 	}
 }
+
+func TestFileCopyIsBounded(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "node.log")
+	r := newRing(10)
+	r.writeTo(path)
+	defer r.file.Close()
+	for i := 0; i < 200_000; i++ {
+		r.logf("line %d with some padding to make the file grow", i)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Size() > maxFileBytes+1024 {
+		t.Errorf("log file is %d bytes, want at most about %d", info.Size(), maxFileBytes)
+	}
+	// The newest line is still in the file.
+	b, _ := os.ReadFile(path)
+	if !strings.Contains(string(b), "line 199999") {
+		t.Errorf("newest line missing from the bounded file")
+	}
+}

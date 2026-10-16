@@ -214,10 +214,14 @@ class SftpController(
 
     fun upload(uris: List<Uri>) {
         val dir = _state.value.path ?: return
+        // A new name for every upload: an upload never replaces a file already in the folder, and a
+        // cancelled one removes only the file it created.
+        val taken = _state.value.entries.mapTo(HashSet()) { it.name }
         transfer(null) { _ ->
             uris.forEachIndexed { i, u ->
                 if (cancelRequested) return@forEachIndexed
-                val (name, size) = describe(u)
+                val (given, size) = describe(u)
+                val name = uniqueName(given, taken).also { taken += it }
                 val remote = SftpClient.join(dir, name)
                 _state.update { it.copy(transfer = Transfer(true, name, 0, size, i + 1, uris.size)) }
                 withContext(Dispatchers.IO) {
@@ -233,17 +237,19 @@ class SftpController(
     fun uploadFolder(tree: Uri) {
         val dir = _state.value.path ?: return
         val root = DocumentFile.fromTreeUri(app, tree) ?: return fail(IllegalStateException("Can't read that folder"))
-        transfer(Transfer(true, root.name.orEmpty(), 0, 0, 1, 1)) { _ ->
-            withContext(Dispatchers.IO) { putTree(root, dir) }
+        val given = root.name ?: return fail(IllegalStateException("Can't read that folder"))
+        // The folder gets a new name too, so its files cannot be mixed into one already there.
+        val name = uniqueName(given, _state.value.entries.mapTo(HashSet()) { it.name })
+        transfer(Transfer(true, name, 0, 0, 1, 1)) { _ ->
+            withContext(Dispatchers.IO) { putTree(root, dir, name) }
         }
     }
 
-    private suspend fun putTree(src: DocumentFile, dir: String) {
-        val name = src.name ?: return
+    private suspend fun putTree(src: DocumentFile, dir: String, name: String) {
         val remote = SftpClient.join(dir, name)
         if (src.isDirectory) {
             runCatching { client.mkdir(remote) } // already there is fine
-            for (c in src.listFiles()) { if (cancelRequested) return; putTree(c, remote) }
+            for (c in src.listFiles()) { if (cancelRequested) return; putTree(c, remote, c.name ?: continue) }
         } else {
             _state.update { it.copy(transfer = it.transfer?.copy(name = name, done = 0, total = src.length())) }
             app.contentResolver.openInputStream(src.uri)!!.use { client.upload(it, remote, { cancelRequested }) { n -> progress(n) } }

@@ -12,6 +12,7 @@ android {
     }
 }
 dependencies {
+    testImplementation("junit:junit:4.13.2")
     implementation(project(":core:domain"))
     implementation(project(":core:ssh"))
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")

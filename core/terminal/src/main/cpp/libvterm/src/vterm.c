@@ -157,8 +157,14 @@ INTERNAL void vterm_push_output_bytes(VTerm *vt, const char *bytes, size_t len)
 
 INTERNAL void vterm_push_output_vsprintf(VTerm *vt, const char *format, va_list args)
 {
-  size_t len = vsnprintf(vt->tmpbuffer, vt->tmpbuffer_len,
+  int written = vsnprintf(vt->tmpbuffer, vt->tmpbuffer_len,
       format, args);
+  if(written < 0)
+    return;
+  // vsnprintf returns the length it would have written, which can be past the buffer.
+  size_t len = (size_t)written;
+  if(len >= vt->tmpbuffer_len)
+    len = vt->tmpbuffer_len - 1;
 
   vterm_push_output_bytes(vt, vt->tmpbuffer, len);
 }
