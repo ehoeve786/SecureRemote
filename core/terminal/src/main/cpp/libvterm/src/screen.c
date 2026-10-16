@@ -365,6 +365,12 @@ static int erase(VTermRect rect, int selective, void *user)
   return erase_user(rect, 0, user);
 }
 
+/* True when a pending scroll stays within the rect; accumulating past it is flushed first, so the sum cannot overflow. */
+static int scroll_fits(long long sum, int extent)
+{
+  return sum <= extent && sum >= -(long long)extent;
+}
+
 static int scrollrect(VTermRect rect, int downward, int rightward, void *user)
 {
   VTermScreen *screen = user;
@@ -396,7 +402,9 @@ static int scrollrect(VTermRect rect, int downward, int rightward, void *user)
   }
   else if(rect_equal(&screen->pending_scrollrect, &rect) &&
      ((screen->pending_scroll_downward  == 0 && downward  == 0) ||
-      (screen->pending_scroll_rightward == 0 && rightward == 0))) {
+      (screen->pending_scroll_rightward == 0 && rightward == 0)) &&
+     scroll_fits((long long)screen->pending_scroll_downward + downward, rect.end_row - rect.start_row) &&
+     scroll_fits((long long)screen->pending_scroll_rightward + rightward, rect.end_col - rect.start_col)) {
     screen->pending_scroll_downward  += downward;
     screen->pending_scroll_rightward += rightward;
   }
@@ -743,7 +751,7 @@ static void resize_buffer(VTermScreen *screen, int bufidx, int new_rows, int new
         break;
 
       VTermPos pos = { .row = new_row };
-      for(pos.col = 0; pos.col < old_cols && pos.col < new_cols; pos.col += screen->sb_buffer[pos.col].width) {
+      for(pos.col = 0; pos.col < old_cols && pos.col < new_cols; pos.col += (screen->sb_buffer[pos.col].width > 0 ? screen->sb_buffer[pos.col].width : 1)) {
         VTermScreenCell *src = &screen->sb_buffer[pos.col];
         ScreenCell *dst = &new_buffer[pos.row * new_cols + pos.col];
 

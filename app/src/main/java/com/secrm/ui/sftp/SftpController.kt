@@ -182,7 +182,12 @@ class SftpController(
             try {
                 tmp.outputStream().use { src.download(e.path, it, { cancelRequested }) { n -> progress(n) } }
                 _state.update { it.copy(transfer = it.transfer?.copy(done = 0)) }
-                tmp.inputStream().use { client.upload(it, to, { cancelRequested }) { n -> progress(n) } }
+                try {
+                    tmp.inputStream().use { client.upload(it, to, { cancelRequested }) { n -> progress(n) } }
+                } catch (t: Throwable) {
+                    client.removeQuietly(to) // a partial copy must not stay on the destination host
+                    throw t
+                }
             } finally { tmp.delete() }
         }
     }

@@ -518,6 +518,9 @@ internal class InlineImageStore(var limits: InlineImageLimits, private val handl
                 Log.w("InlineImageStore", "Ignoring image ${asset.id}: pixel decoding exhausted memory", e)
                 null
             }
+            // Read on the decoder thread, the only thread that uses the Movie.
+            @Suppress("DEPRECATION")
+            val movieDuration = movie?.duration() ?: 0
             maintenance.execute {
                 synchronized(this) {
                     decodedReservation -= reservation
@@ -533,6 +536,7 @@ internal class InlineImageStore(var limits: InlineImageLimits, private val handl
                         asset.bitmap = decoded
                         asset.drawable = drawable
                         asset.movie = movie
+                        asset.movieDuration = movieDuration
                         asset.decoderBytes = if (drawable != null || movie != null) nativeBytes else 0
                         asset.bitmapGeneration = generation
                         asset.presentation.publish(decoded, drawable)
@@ -552,7 +556,7 @@ internal class InlineImageStore(var limits: InlineImageLimits, private val handl
                 return@forEach
             }
             @Suppress("DEPRECATION")
-            if (asset.movie != null && asset.movie!!.duration() > 0 && now >= asset.deadline && !asset.pending) {
+            if (asset.movie != null && asset.movieDuration > 0 && now >= asset.deadline && !asset.pending) {
                 asset.deadline = now + 40
                 asset.changed()
                 request(asset, asset.targetWidth, asset.targetHeight)
@@ -602,6 +606,7 @@ internal class ImageAsset(val id: Long, val number: Long?, private val store: In
 
     @Suppress("DEPRECATION")
     var movie: Movie? = null
+    var movieDuration = 0
     var decoderBytes = 0L
     var pending = false
     var targetWidth = 0
@@ -619,6 +624,7 @@ internal class ImageAsset(val id: Long, val number: Long?, private val store: In
         changed()
         drawable = null
         movie = null
+        movieDuration = 0
         decoderBytes = 0
         bitmap = null
         presentation.publish(null, null)

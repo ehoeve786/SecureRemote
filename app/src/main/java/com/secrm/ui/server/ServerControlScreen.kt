@@ -175,7 +175,7 @@ private fun TailscaleSection(app: SecureRemoteApp) {
         )
         PillButton("Copy logs", PillStyle.Ghost, Modifier.fillMaxWidth()) {
             (ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
-                .setPrimaryClip(ClipData.newPlainText("tailscale logs", ts.logs()))
+                .setPrimaryClip(sensitiveClip("tailscale logs", ts.logs()))
         }
     }
 }
