@@ -51,4 +51,7 @@ class EncryptedConfigStore(private val context: Context) {
         get() = get("ssh.connections"); set(v) = put("ssh.connections", v ?: "")
     var mcpBearerToken: String?
         get() = get("mcp.tok"); set(v) = put("mcp.tok", v ?: "")
+    /** Token for the on-phone port. Its own secret, not derived from the remote bearer. */
+    var mcpLocalToken: String?
+        get() = get("mcp.local"); set(v) = put("mcp.local", v ?: "")
 }

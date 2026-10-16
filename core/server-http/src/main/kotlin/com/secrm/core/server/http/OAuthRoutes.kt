@@ -5,7 +5,9 @@ import io.ktor.server.application.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import io.ktor.utils.io.readAvailable
 import kotlinx.serialization.json.*
+import java.io.ByteArrayOutputStream
 import java.net.URLEncoder
 
 /** The public origin a request came in on, e.g. https://secureremote-x.tail1234.ts.net. */
@@ -18,8 +20,51 @@ private fun esc(s: String?) = s.orEmpty().replace("&", "&amp;").replace("\"", "&
 
 private fun enc(s: String) = URLEncoder.encode(s, "UTF-8")
 
+/** Largest OAuth request body. Every legitimate request here is a few hundred bytes. */
+private const val MAX_OAUTH_BODY = 64 * 1024
+
+/**
+ * The request body as text, or null if it is over [limit] bytes. Read in chunks with a running count,
+ * so a chunked body with no Content-Length is capped too. These routes are reachable from the internet.
+ * An oversized body is drained, not abandoned: closing with unread input resets the connection before
+ * the client can read its 413. Nothing past the limit is kept.
+ */
+private suspend fun ApplicationCall.boundedText(limit: Int = MAX_OAUTH_BODY): String? {
+    val out = ByteArrayOutputStream()
+    val channel = receiveChannel()
+    val chunk = ByteArray(4096)
+    var tooLarge = false
+    while (true) {
+        val n = channel.readAvailable(chunk, 0, chunk.size)
+        if (n < 0) break
+        if (!tooLarge && out.size() + n > limit) { tooLarge = true; out.reset() }
+        if (!tooLarge) out.write(chunk, 0, n)
+    }
+    return if (tooLarge) null else out.toString(Charsets.UTF_8.name())
+}
+
+/** A fixed window of [max] calls per [windowMs], shared by all callers of one route. */
+internal class RateLimit(
+    private val max: Int,
+    private val windowMs: Long = 60_000,
+    private val now: () -> Long = System::currentTimeMillis,
+) {
+    private var windowStart = 0L
+    private var count = 0
+
+    @Synchronized
+    fun allow(): Boolean {
+        val t = now()
+        if (t - windowStart >= windowMs) { windowStart = t; count = 0 }
+        return ++count <= max
+    }
+}
+
 /** OAuth discovery, registration, authorization (by pairing code) and token endpoints for claude.ai. */
 internal fun Route.oauthRoutes(oauth: McpOAuth, mcpPath: String) {
+    // Shared across callers, so a flood can briefly delay a refresh but cannot exhaust memory or CPU.
+    val registerLimit = RateLimit(max = 20)
+    val tokenLimit = RateLimit(max = 60)
     get("/.well-known/oauth-protected-resource/{rest...}") {
         call.json {
             put("resource", call.base() + mcpPath)
@@ -41,8 +86,11 @@ internal fun Route.oauthRoutes(oauth: McpOAuth, mcpPath: String) {
     }
     // Public clients only; nothing is stored, since authorize checks the redirect URI itself.
     post("/register") {
+        // Body first, so a refused request is drained too (see boundedText).
+        val body = call.boundedText() ?: return@post call.respond(HttpStatusCode.PayloadTooLarge)
+        if (!registerLimit.allow()) return@post call.respond(HttpStatusCode.TooManyRequests)
         val uris = runCatching {
-            Json.parseToJsonElement(call.receiveText()).jsonObject["redirect_uris"]!!.jsonArray.map { it.jsonPrimitive.content }
+            Json.parseToJsonElement(body).jsonObject["redirect_uris"]!!.jsonArray.map { it.jsonPrimitive.content }
         }.getOrDefault(emptyList())
         if (uris.isEmpty() || !uris.all(McpOAuth::allowedRedirect)) {
             return@post call.json(HttpStatusCode.BadRequest) {
@@ -64,7 +112,7 @@ internal fun Route.oauthRoutes(oauth: McpOAuth, mcpPath: String) {
         call.respondText(pairingPage(p["redirect_uri"], p["state"], p["code_challenge"], error = false), ContentType.Text.Html)
     }
     post("/authorize") {
-        val p = call.receiveParameters()
+        val p = call.boundedText()?.let { parseQueryString(it) } ?: return@post call.respond(HttpStatusCode.PayloadTooLarge)
         val redirect = p["redirect_uri"]
         if (!McpOAuth.allowedRedirect(redirect)) return@post call.respondText("Only Claude can connect", status = HttpStatusCode.BadRequest)
         val code = oauth.authorize(p["pairing"].orEmpty(), p["code_challenge"].orEmpty(), redirect!!)
@@ -72,7 +120,8 @@ internal fun Route.oauthRoutes(oauth: McpOAuth, mcpPath: String) {
         call.respondRedirect("$redirect?code=${enc(code)}&state=${enc(p["state"].orEmpty())}")
     }
     post("/token") {
-        val p = call.receiveParameters()
+        val p = call.boundedText()?.let { parseQueryString(it) } ?: return@post call.respond(HttpStatusCode.PayloadTooLarge)
+        if (!tokenLimit.allow()) return@post call.respond(HttpStatusCode.TooManyRequests)
         val (access, refresh) = oauth.token(p.names().associateWith { p[it] })
             ?: return@post call.json(HttpStatusCode.BadRequest) { put("error", "invalid_grant") }
         call.json {

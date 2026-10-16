@@ -60,7 +60,10 @@ class McpServerService : Service() {
         val bearer = app.config.mcpBearerToken.takeIf { !it.isNullOrBlank() }
             ?: java.util.UUID.randomUUID().toString().replace("-", "")
                 .also { app.config.mcpBearerToken = it }
-        val local = "local-" + bearer.take(8)
+        val local = app.config.mcpLocalToken.takeIf { !it.isNullOrBlank() }
+            ?: ByteArray(32).also(java.security.SecureRandom()::nextBytes)
+                .joinToString("") { "%02x".format(it) }
+                .also { app.config.mcpLocalToken = it }
 
         server = McpHttpServer(
             dispatcher = app.dispatcher,
