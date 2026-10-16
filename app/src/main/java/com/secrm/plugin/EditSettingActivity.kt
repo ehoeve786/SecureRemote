@@ -23,6 +23,12 @@ import com.secrm.design.mono
 class EditSettingActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Only a macro host that opened this for a result may configure an action. Anything else could
+        // collect a signed setting, and so a command the user never meant to approve.
+        val caller = callingPackage
+        if (caller == null || caller !in PluginProtocol.HOST_PACKAGES) {
+            setResult(Activity.RESULT_CANCELED); finish(); return
+        }
         val initial = RunSetting.fromBundle(intent.getBundleExtra(PluginProtocol.EXTRA_BUNDLE))
         val hosts = (application as SecureRemoteApp).connections.list().map { it.name }
         setContent {
@@ -38,7 +44,7 @@ class EditSettingActivity : ComponentActivity() {
     }
 
     private fun resultIntent(s: RunSetting): Intent = Intent().apply {
-        putExtra(PluginProtocol.EXTRA_BUNDLE, s.toBundle())
+        putExtra(PluginProtocol.EXTRA_BUNDLE, s.signedBundle((application as SecureRemoteApp).config))
         putExtra(PluginProtocol.EXTRA_BLURB, s.blurb())
         if (s.block) {
             putExtra(PluginProtocol.EXTRA_REQUESTED_TIMEOUT, PluginProtocol.REQUESTED_TIMEOUT_NEVER)
