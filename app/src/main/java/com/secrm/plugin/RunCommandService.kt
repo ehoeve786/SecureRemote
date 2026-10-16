@@ -3,6 +3,7 @@ package com.secrm.plugin
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
@@ -22,10 +23,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import java.util.UUID
 
 /**
  * Runs one plugin command on its own SSH session, so the app's live terminal session is untouched.
- * Foreground, so Android doesn't stop it while the macro waits.
+ * Foreground, so Android doesn't stop it while the macro waits. With [RunSetting.live], its output
+ * is also offered to a read-only terminal, opened from the notification.
  */
 class RunCommandService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -53,13 +56,24 @@ class RunCommandService : Service() {
         @Suppress("DEPRECATION")
         val fire: Intent? = intent.getParcelableExtra(EXTRA_FIRE)
 
-        startForeground(NOTIF_ID, notification(setting))
+        val liveId = if (setting.live) UUID.randomUUID().toString() else null
+        val live = liveId?.let { id -> LiveOutput().also { LiveCommands.add(id, it) } }
+        startForeground(NOTIF_ID, notification(setting, liveId))
         scope.launch {
-            val (code, vars) = execute(setting)
-            if (setting.block && fire != null) {
-                runCatching { PluginProtocol.signalFinish(this@RunCommandService, fire, code, vars) }
+            try {
+                val (code, vars) = execute(setting, live)
+                if (live != null && code != PluginProtocol.RESULT_OK) {
+                    live.sink(red = true).write(vars.getString(PluginProtocol.VAR_ERRMSG).orEmpty().toByteArray())
+                }
+                if (setting.block && fire != null) {
+                    runCatching { PluginProtocol.signalFinish(this@RunCommandService, fire, code, vars) }
+                }
+            } finally {
+                // Ends the terminal's output, so it closes once the command has exited.
+                live?.finish()
+                liveId?.let(LiveCommands::remove)
+                stopSelf(startId)
             }
-            stopSelf(startId)
         }
         return START_NOT_STICKY
     }
@@ -70,7 +84,7 @@ class RunCommandService : Service() {
     }
 
     /** Connects, runs the command, and returns the result code with the variables to set. */
-    private suspend fun execute(s: RunSetting): Pair<Int, Bundle> {
+    private suspend fun execute(s: RunSetting, live: LiveOutput?): Pair<Int, Bundle> {
         val app = application as SecureRemoteApp
         val conn = app.connections.find(s.connection) ?: return failure("No saved connection named ${s.connection}")
         // A separate client, so this doesn't replace or drop the app's live session.
@@ -78,7 +92,7 @@ class RunCommandService : Service() {
         return try {
             val auth = authFor(conn) ?: return failure("No key or vault item for ${conn.name}")
             if (!ssh.connectSaved(conn, auth, app.connections)) return failure("Could not connect to ${conn.host}")
-            val r = ssh.execResult(s.command)
+            val r = ssh.execResult(s.command, live?.sink(red = false), live?.sink(red = true))
             PluginProtocol.RESULT_OK to Bundle().apply {
                 putString(PluginProtocol.VAR_STDOUT, r.stdout)
                 putString(PluginProtocol.VAR_STDERR, r.stderr)
@@ -109,17 +123,27 @@ class RunCommandService : Service() {
             putString(PluginProtocol.VAR_ERRMSG, message)
         }
 
-    private fun notification(s: RunSetting): Notification {
+    private fun notification(s: RunSetting, liveId: String?): Notification {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             getSystemService(NotificationManager::class.java).createNotificationChannel(
                 NotificationChannel(CHANNEL, "Plugin commands", NotificationManager.IMPORTANCE_LOW)
             )
         }
-        return NotificationCompat.Builder(this, CHANNEL)
+        val firstLine = s.command.lineSequence().firstOrNull().orEmpty().take(60)
+        val builder = NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(android.R.drawable.stat_sys_upload)
             .setContentTitle("Running on ${s.connection}")
-            .setContentText(s.command.lineSequence().firstOrNull().orEmpty().take(60))
+            .setContentText(if (liveId != null) "Tap to watch: $firstLine" else firstLine)
             .setOngoing(true)
-            .build()
+        if (liveId != null) {
+            builder.setContentIntent(
+                PendingIntent.getActivity(
+                    this, liveId.hashCode(),
+                    LiveTerminalActivity.intent(this, liveId, s.connection),
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                )
+            )
+        }
+        return builder.build()
     }
 }

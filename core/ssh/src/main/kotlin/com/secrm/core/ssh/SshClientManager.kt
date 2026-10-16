@@ -216,7 +216,12 @@ class SshClientManager {
 
     data class ExecResult(val stdout: String, val stderr: String, val exitCode: Int)
 
-    suspend fun execResult(command: String): ExecResult = withContext(Dispatchers.IO) {
+    /** Runs [command]; [watchOut] and [watchErr], if given, also get its output as it arrives. */
+    suspend fun execResult(
+        command: String,
+        watchOut: OutputStream? = null,
+        watchErr: OutputStream? = null,
+    ): ExecResult = withContext(Dispatchers.IO) {
         val s = session ?: error("No active SSH session")
         val ch = s.openChannel("exec") as com.jcraft.jsch.ChannelExec
         val out = ByteArrayOutputStream()
@@ -228,14 +233,21 @@ class SshClientManager {
             }
             try {
                 ch.setCommand(command)
-                ch.setErrStream(err)
+                ch.setErrStream(tee(err, watchErr))
                 // Take the stream before connecting, or JSch drops the command's first output.
                 val input = ch.inputStream
                 ch.connect(10_000)
-                input.copyTo(out)
+                input.copyTo(tee(out, watchOut))
             } finally { watcher.cancel(); ch.disconnect() }
         }
         ExecResult(out.toString(Charsets.UTF_8.name()), err.toString(Charsets.UTF_8.name()), ch.exitStatus)
+    }
+
+    /** [a], also written to [b] when it is given. */
+    private fun tee(a: OutputStream, b: OutputStream?): OutputStream = if (b == null) a else object : OutputStream() {
+        override fun write(x: Int) { a.write(x); b.write(x) }
+        override fun write(x: ByteArray, off: Int, len: Int) { a.write(x, off, len); b.write(x, off, len) }
+        override fun flush() { a.flush(); b.flush() }
     }
 
     suspend fun disconnect() = withContext(Dispatchers.IO) {
