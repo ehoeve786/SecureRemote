@@ -34,6 +34,14 @@
                 <action android:name="com.twofortyfouram.locale.intent.action.EDIT_SETTING" />
             </intent-filter>
         </activity>
+        <!-- Read-only output of a plugin command, opened from its notification. -->
+        <activity
+            android:name=".plugin.LiveTerminalActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden"
+            android:label="Plugin output"
+            android:theme="@android:style/Theme.Material.NoActionBar" />
         <receiver
             android:name=".plugin.FireSettingReceiver"
             android:exported="true">

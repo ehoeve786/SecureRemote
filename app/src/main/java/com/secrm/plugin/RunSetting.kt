@@ -8,11 +8,14 @@ data class RunSetting(
     val command: String,
     /** Wait for the command to finish before the macro continues; its output comes back as %stdout, %stderr, %result. */
     val block: Boolean,
+    /** Show the output in a read-only terminal while the command runs; tap its notification to open it. */
+    val live: Boolean = false,
 ) {
     fun toBundle(): Bundle = Bundle().apply {
         putString(KEY_CONNECTION, connection)
         putString(KEY_COMMAND, command)
         putBoolean(KEY_BLOCK, block)
+        putBoolean(KEY_LIVE, live)
     }
 
     fun blurb(): String = "$connection: ${command.lineSequence().firstOrNull().orEmpty().take(40)}"
@@ -21,6 +24,7 @@ data class RunSetting(
         private const val KEY_CONNECTION = "connection"
         private const val KEY_COMMAND = "command"
         private const val KEY_BLOCK = "block"
+        private const val KEY_LIVE = "live"
 
         fun fromBundle(b: Bundle?): RunSetting? {
             if (b == null || !b.containsKey(KEY_COMMAND)) return null
@@ -28,6 +32,7 @@ data class RunSetting(
                 connection = b.getString(KEY_CONNECTION).orEmpty(),
                 command = b.getString(KEY_COMMAND).orEmpty(),
                 block = b.getBoolean(KEY_BLOCK),
+                live = b.getBoolean(KEY_LIVE),
             )
         }
     }

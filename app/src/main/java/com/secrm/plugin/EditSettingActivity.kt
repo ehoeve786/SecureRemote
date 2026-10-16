@@ -54,6 +54,7 @@ private fun EditScreen(hosts: List<String>, initial: RunSetting?, onCancel: () -
     var host by remember { mutableStateOf(initial?.connection ?: hosts.firstOrNull().orEmpty()) }
     var command by remember { mutableStateOf(initial?.command.orEmpty()) }
     var block by remember { mutableStateOf(initial?.block ?: true) }
+    var live by remember { mutableStateOf(initial?.live ?: false) }
     var picking by remember { mutableStateOf(false) }
 
     Column(
@@ -79,10 +80,17 @@ private fun EditScreen(hosts: List<String>, initial: RunSetting?, onCancel: () -
             }
             Switch(checked = block, onCheckedChange = { block = it })
         }
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.weight(1f)) {
+                Text("Watch live")
+                Text("Show the output in a terminal while it runs. Tap the notification to open it.", style = MaterialTheme.typography.bodySmall)
+            }
+            Switch(checked = live, onCheckedChange = { live = it })
+        }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
             TextButton(onClick = onCancel) { Text("Cancel") }
             Button(
-                onClick = { onSave(RunSetting(host, command.trim(), block)) },
+                onClick = { onSave(RunSetting(host, command.trim(), block, live)) },
                 enabled = host.isNotBlank() && command.isNotBlank(),
             ) { Text("Save") }
         }

@@ -8,6 +8,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.sp
 import com.secrm.core.ssh.SshClientManager
+import java.io.InputStream
 import java.io.OutputStream
 import org.connectbot.terminal.Terminal
 import org.connectbot.terminal.TerminalEmulatorFactory
@@ -17,7 +18,22 @@ import kotlin.concurrent.thread
 /** Pipes an SSH shell channel into ConnectBot termlib's emulator. */
 private val ANSI = Regex("\u001B(\\[[0-?]*[ -/]*[@-~]|\\][^\u0007\u001B]*(\u0007|\u001B\\\\)?|[@-Z\\\\-_])|\r")
 
-class TerminalBridge(private val ssh: SshClientManager) {
+class TerminalBridge private constructor(
+    /** The SSH session whose shell this drives; null for a watch-only terminal. */
+    private val ssh: SshClientManager?,
+    /** Output to show read-only, from a command rather than a shell; null for a shell. */
+    private val feed: InputStream?,
+) {
+    constructor(ssh: SshClientManager) : this(ssh, null)
+
+    companion object {
+        /** A read-only terminal showing [feed]; keyboard input goes nowhere. */
+        fun watching(feed: InputStream) = TerminalBridge(null, feed)
+    }
+
+    /** Called once the output ends (the shell or command closed), from the reader thread. */
+    @Volatile var onEnd: (() -> Unit)? = null
+
     private val writer = Executors.newSingleThreadExecutor()
     @Volatile private var out: OutputStream? = null
 
@@ -49,18 +65,24 @@ class TerminalBridge(private val ssh: SshClientManager) {
         initialRows = 40,
         initialCols = 120,
         onKeyboardInput = ::send,
-        onResize = { ssh.resizePty(it.columns, it.rows, it.widthPixels, it.heightPixels) },
+        onResize = { ssh?.resizePty(it.columns, it.rows, it.widthPixels, it.heightPixels) },
     )
 
     private var started: Boolean? = null
 
-    /** Opens the shell and starts the read loop, once; later calls return the first result. */
+    /** Opens the shell (or starts the feed) and the read loop, once; later calls return the first result. */
     suspend fun start(): Boolean = started ?: begin().also { started = it }
 
     private suspend fun begin(): Boolean {
-        if (!ssh.ensureShell()) return false
-        val input = ssh.shellInputStream() ?: return false
-        out = ssh.shellOutputStream()
+        val input: InputStream
+        val s = ssh
+        if (s == null) {
+            input = feed ?: return false
+        } else {
+            if (!s.ensureShell()) return false
+            input = s.shellInputStream() ?: return false
+            out = s.shellOutputStream()
+        }
         thread(isDaemon = true, name = "ssh-term-read") {
             val buf = ByteArray(8192)
             val why = runCatching {
@@ -77,9 +99,12 @@ class TerminalBridge(private val ssh: SshClientManager) {
                     }
                 }
             }.exceptionOrNull()
-            // Say so instead of leaving a dead terminal that silently ignores typing.
-            note("connection closed" + (why?.let { ": $it" } ?: ""))
-            emulator.writeInput(("\u001b[90m" + ssh.recentLog().replace("\n", "\r\n") + "\u001b[0m\r\n").toByteArray())
+            if (s != null) {
+                // Say so instead of leaving a dead terminal that silently ignores typing.
+                note("connection closed" + (why?.let { ": $it" } ?: ""))
+                emulator.writeInput(("\u001b[90m" + s.recentLog().replace("\n", "\r\n") + "\u001b[0m\r\n").toByteArray())
+            }
+            onEnd?.invoke()
         }
         return true
     }
