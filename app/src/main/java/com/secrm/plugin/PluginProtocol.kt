@@ -25,7 +25,6 @@ object PluginProtocol {
     /** Packages of the macro hosts this plugin talks to. Only these may receive results or open the editor. */
     val HOST_PACKAGES = setOf(
         "net.dinglisch.android.taskerm", // Tasker
-        "net.dinglisch.android.tasker",
         "com.arlosoft.macrodroid", // MacroDroid
     )
 
