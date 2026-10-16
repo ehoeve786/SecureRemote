@@ -36,6 +36,11 @@ enum class ProgressState {
  * iTerm2 extensions (OSC 1337), hyperlinks (OSC 8), and progress reporting (OSC 9;4).
  */
 internal class OscParser {
+    private companion object {
+        /** Largest OSC 52 payload accepted, in characters (base64 form). */
+        const val MAX_CLIPBOARD_CHARS = 100_000
+    }
+
     // Track current prompt ID for grouping command blocks
     private var currentPromptId = 0
 
@@ -130,6 +135,8 @@ internal class OscParser {
 
         // Do not support clipboard read requests (security concern)
         if (data == "?") return emptyList()
+        // A remote program may not fill the clipboard with an arbitrarily large payload.
+        if (data.length > MAX_CLIPBOARD_CHARS) return emptyList()
 
         // Empty data is allowed (means empty clipboard copy)
         if (data.isEmpty()) {

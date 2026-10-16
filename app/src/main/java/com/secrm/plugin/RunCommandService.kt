@@ -25,6 +25,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.UUID
 
@@ -43,6 +45,8 @@ class RunCommandService : Service() {
         private const val UNLOCK_NOTIF_ID = 7303
         private const val EXTRA_SETTING = "setting"
         private const val EXTRA_FIRE = "fire"
+        /** One unlock prompt at a time: UnlockActivity has a single result slot. */
+        private val unlockLock = Mutex()
 
         fun start(ctx: Context, s: RunSetting, fire: Intent) {
             val i = Intent(ctx, RunCommandService::class.java)
@@ -99,6 +103,8 @@ class RunCommandService : Service() {
         // A separate client, so this doesn't replace or drop the app's live session.
         val ssh = app.newClient()
         return try {
+            // Same rule as MCP: a host's key is trusted only after the owner has connected to it in the app.
+            if (conn.hostKey == null) return failure("${conn.name} has no trusted host key yet. Connect to it once in the app.")
             if (conn.authMethod == AuthMethod.AGENT && !unlockVault(app)) return failure("Bitwarden is locked. Unlock it and run again.")
             val auth = authFor(conn) ?: return failure("No key or vault item for ${conn.name}")
             if (!ssh.connectSaved(conn, auth, app.connections)) return failure("Could not connect to ${conn.host}")
@@ -120,7 +126,9 @@ class RunCommandService : Service() {
      * Unlocks the Bitwarden vault if it is locked, via the fingerprint prompt in [UnlockActivity].
      * A background service can't show that prompt itself, so a full-screen notification opens it.
      */
-    private suspend fun unlockVault(app: SecureRemoteApp): Boolean {
+    private suspend fun unlockVault(app: SecureRemoteApp): Boolean = unlockLock.withLock { unlockOnce(app) }
+
+    private suspend fun unlockOnce(app: SecureRemoteApp): Boolean {
         if (app.vault.keys != null) return true
         if (!app.vault.isConfigured) return false
         val nm = getSystemService(NotificationManager::class.java)

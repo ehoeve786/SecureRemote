@@ -40,8 +40,23 @@ import kotlin.coroutines.resume
 class BitwardenVault(private val config: EncryptedConfigStore) {
     data class SshKey(val id: String, val name: String, val privateKey: String)
 
-    /** Decrypted SSH keys; null while locked. */
-    @Volatile var keys: List<SshKey>? = null; private set
+    @Volatile private var keysValue: List<SshKey>? = null
+    @Volatile private var unlockedUntil = 0L
+
+    /**
+     * Decrypted SSH keys; null while locked. They expire [UNLOCK_TTL_MS] after unlocking, so an
+     * unlock is not an open session: after that, a fingerprint is needed again.
+     */
+    val keys: List<SshKey>?
+        get() {
+            if (System.currentTimeMillis() > unlockedUntil) keysValue = null
+            return keysValue
+        }
+
+    private fun setKeys(value: List<SshKey>?) {
+        keysValue = value
+        unlockedUntil = if (value == null) 0L else System.currentTimeMillis() + UNLOCK_TTL_MS
+    }
     val isConfigured get() = config.get(K_WRAPPED) != null
 
     fun privateKey(id: String) = keys?.firstOrNull { it.id == id }?.privateKey
@@ -59,7 +74,7 @@ class BitwardenVault(private val config: EncryptedConfigStore) {
         config.put(K_ID, clientId.trim())
         config.put(K_SECRET, secret.trim())
         config.put(K_WRAPPED, wrap(userKey))
-        keys = parse(sync, userKey)
+        setKeys(parse(sync, userKey))
     }
 
     /** Unlocks if needed (prompting via [authorize]); true when keys are available. */
@@ -67,14 +82,14 @@ class BitwardenVault(private val config: EncryptedConfigStore) {
         if (keys == null && isConfigured && authorize()) {
             val userKey = runCatching { unwrap(config.get(K_WRAPPED)!!) }
                 .getOrElse { signOut(); error("Screen lock changed. Sign in to Bitwarden again.") }
-            keys = withContext(Dispatchers.IO) {
+            setKeys(withContext(Dispatchers.IO) {
                 parse(fetch(config.get(K_SERVER)!!, config.get(K_ID)!!, config.get(K_SECRET)!!).second, userKey)
-            }
+            })
         }
         return keys != null
     }
 
-    fun lock() { keys = null }
+    fun lock() = setKeys(null)
 
     fun signOut() {
         lock()
@@ -199,6 +214,7 @@ class BitwardenVault(private val config: EncryptedConfigStore) {
 
     private companion object {
         const val ALIAS = "secrm_bitwarden"
+        const val UNLOCK_TTL_MS = 10 * 60_000L
         const val K_SERVER = "bw.server"
         const val K_ID = "bw.client_id"
         const val K_SECRET = "bw.client_secret"

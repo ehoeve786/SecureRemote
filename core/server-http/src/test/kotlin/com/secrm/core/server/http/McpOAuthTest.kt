@@ -170,4 +170,9 @@ class McpOAuthTest {
         assertFalse(McpOAuth.allowedRedirect(null))
         assertFalse(McpOAuth.allowedRedirect("not a uri"))
     }
+
+    @Test fun malformedStoredLinesAreSkippedAtStartup() {
+        val oauth = McpOAuth({ "junk\nh1  123 f\nh2 a notanumber f\n" }, {})
+        assertFalse(oauth.isValid("anything"))
+    }
 }

@@ -168,6 +168,8 @@ class SshClientManager {
         try {
             _state.value = SshState.Connecting
             val s = newSession(cfg)
+            // A replaced session must not stay open: its shell and channels would leak.
+            cleanup()
             session = s
             lastCfg = cfg
             hostKey = s.hostKey?.key

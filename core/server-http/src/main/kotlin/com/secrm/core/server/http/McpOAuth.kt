@@ -27,11 +27,14 @@ class McpOAuth(
 
     /** Token hash → entry. Persisted as "hash kind expires family" lines. */
     private val tokens = HashMap<String, Entry>().apply {
+        // A malformed line is skipped rather than failing construction, which runs at app start.
         load().orEmpty().lines().forEach { l ->
-            val f = l.split(' ')
-            when (f.size) {
-                4 -> put(f[0], Entry(f[1][0], f[2].toLong(), f[3]))
-                3 -> put(f[0], Entry(f[1][0], f[2].toLong(), f[0])) // older format: no family
+            runCatching {
+                val f = l.split(' ')
+                when (f.size) {
+                    4 -> put(f[0], Entry(f[1].single(), f[2].toLong(), f[3]))
+                    3 -> put(f[0], Entry(f[1].single(), f[2].toLong(), f[0])) // older format: no family
+                }
             }
         }
     }
@@ -59,6 +62,7 @@ class McpOAuth(
     /** Exchanges a correct pairing code for an authorization code, or returns null. */
     @Synchronized
     fun authorize(code: String, challenge: String, redirect: String): String? {
+        codes.values.removeAll { it.expires < now() }
         val p = pairing
         if (p == null || now() > pairingExpires || !MessageDigest.isEqual(code.trim().uppercase().toByteArray(), p.toByteArray())) {
             if (++failures >= 5) pairing = null

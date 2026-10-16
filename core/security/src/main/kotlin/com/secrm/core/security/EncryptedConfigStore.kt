@@ -2,9 +2,9 @@ package com.secrm.core.security
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
-import java.security.GeneralSecurityException
 
 class EncryptedConfigStore(private val context: Context) {
     private var prefs: SharedPreferences? = openOrNull()
@@ -29,11 +29,16 @@ class EncryptedConfigStore(private val context: Context) {
             EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
             EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
         )
-    } catch (e: GeneralSecurityException) {
+    } catch (e: Exception) {
+        // Keystore or file damage of any kind: the same recovery as a lost key.
+        Log.e(TAG, "Could not open the secure store: ${e.javaClass.simpleName}")
         null
     }
 
-    private companion object { const val FILE = "secrm_secure_prefs" }
+    private companion object {
+        const val FILE = "secrm_secure_prefs"
+        const val TAG = "EncryptedConfigStore"
+    }
 
     fun put(k: String, v: String) { prefs?.edit()?.putString(k, v)?.apply() }
     fun get(k: String): String? = prefs?.getString(k, null)

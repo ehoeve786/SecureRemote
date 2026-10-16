@@ -118,6 +118,10 @@ func (c *wgConfig) set(key, value string) (err error) {
 		}
 	case "mtu":
 		c.MTU, err = strconv.Atoi(value)
+		// Outside this range the TUN device or the handshake misbehaves, so refuse it up front.
+		if err == nil && (c.MTU < 576 || c.MTU > 9000) {
+			err = fmt.Errorf("MTU %d is outside 576-9000", c.MTU)
+		}
 	case "listenport":
 		c.ListenPort, err = strconv.Atoi(value)
 	}

@@ -257,4 +257,12 @@ class McpServerIntegrationTest {
             headers = mapOf("Content-Type" to "application/x-www-form-urlencoded"), body = big)
         assertEquals(413, r.status)
     }
+
+    @Test fun authorizeWithoutPkceChallengeIsRefused() {
+        val pairing = oauth.newPairingCode()
+        val r = send(remotePort, "POST", "/authorize", remoteHost,
+            headers = mapOf("Content-Type" to "application/x-www-form-urlencoded"),
+            body = form("redirect_uri" to claudeRedirect, "pairing" to pairing))
+        assertEquals(400, r.status)
+    }
 }
