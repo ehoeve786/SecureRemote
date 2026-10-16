@@ -999,6 +999,9 @@ internal class TerminalEmulatorImpl(
             }
 
             val line = currentLines[row]
+            // A remote program can send segments without limit. Each one copies and sorts the
+            // line's list, so the count per line is capped.
+            if (line.semanticSegments.size >= MAX_SEMANTIC_SEGMENTS_PER_LINE) return
             val newSegment = SemanticSegment(
                 startCol = startCol,
                 endCol = endCol,
@@ -1121,6 +1124,7 @@ internal class TerminalEmulatorImpl(
         }
 
         val line = currentLines[row]
+        if (line.semanticSegments.size >= MAX_SEMANTIC_SEGMENTS_PER_LINE) return@damageLocked
         if (segment.semanticType == SemanticType.HYPERLINK) {
             if (!isValidCellRange(segment.startCol, segment.endCol, line.cells.size)) return@damageLocked
             val linkedText = cellText(line.cells, segment.startCol, segment.endCol)
@@ -1551,6 +1555,7 @@ internal class TerminalEmulatorImpl(
     companion object {
         private const val TAG = "TerminalEmulatorImpl"
         private const val MAX_URL_SCAN_CONTINUATION_ROWS = 6
+        private const val MAX_SEMANTIC_SEGMENTS_PER_LINE = 256
     }
 }
 
