@@ -121,9 +121,11 @@ private fun TailscaleSection(app: SecureRemoteApp) {
         "Joins your tailnet in-app (no VPN). SSH reaches tailnet hosts and subnet routes; " +
         "the MCP server is served at https://<this phone>/mcp."
     ) {
-        if (st is Tunnel.State.NeedsAuth)
+        // The URL comes from the control server; only https is opened.
+        val authUrl = (st as? Tunnel.State.NeedsAuth)?.url?.takeIf { it.startsWith("https://") }
+        if (authUrl != null)
             PillButton("Sign in to Tailscale", PillStyle.Primary, Modifier.fillMaxWidth()) {
-                uri.openUri((st as Tunnel.State.NeedsAuth).url)
+                uri.openUri(authUrl)
             }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Public (Funnel) for claude.ai", style = MaterialTheme.typography.bodyMedium,

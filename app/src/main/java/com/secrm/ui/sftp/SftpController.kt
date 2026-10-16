@@ -222,7 +222,13 @@ class SftpController(
             for (c in client.list(e.path)) { if (cancelRequested) return; saveTo(c, d, setProgress) }
         } else {
             val f = parent.createFile("application/octet-stream", e.name) ?: error("Couldn't create ${e.name}")
-            app.contentResolver.openOutputStream(f.uri)!!.use { client.download(e.path, it, { cancelRequested }, setProgress) }
+            try {
+                app.contentResolver.openOutputStream(f.uri)!!.use { client.download(e.path, it, { cancelRequested }, setProgress) }
+            } catch (t: Throwable) {
+                // Don't leave a truncated file in the folder the user picked.
+                f.delete()
+                throw t
+            }
         }
     }
 
