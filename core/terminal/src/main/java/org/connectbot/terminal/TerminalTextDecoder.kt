@@ -48,6 +48,7 @@ internal class TerminalTextDecoder {
         const val PROPERTY = 1
         const val CLIPBOARD = 2
         const val TEXT_LIMIT = 1024 * 1024
-        const val CLIPBOARD_LIMIT = 16 * 1024 * 1024
+        // Matches OscParser's cap on the clipboard payload it passes on.
+        const val CLIPBOARD_LIMIT = 100_000
     }
 }

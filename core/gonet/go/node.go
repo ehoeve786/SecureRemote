@@ -143,18 +143,53 @@ func (n *Node) serveWhenRunning(srv *tsnet.Server) {
 // internet as well as the tailnet on port 443; with it off, only tailnet devices can connect.
 func (n *Node) SetPublic(on bool) error {
 	n.mu.Lock()
-	defer n.mu.Unlock()
 	n.public = on
-	if n.srv == nil || n.httpSrv == nil {
+	srv := n.srv
+	if srv == nil || n.httpSrv == nil {
 		// Applied when the node comes up.
+		n.mu.Unlock()
 		return nil
 	}
 	n.closeListenerLocked()
-	err := n.listenLocked()
+	n.mu.Unlock()
+
+	// Opening the listener can wait on Funnel or certificate setup, so the lock is not held meanwhile.
+	ln, err := openListener(srv, on)
+	if err != nil && on {
+		// Stay reachable on the tailnet while Funnel is blocked.
+		if fallback, ferr := openListener(srv, false); ferr == nil {
+			ln = fallback
+		}
+	}
+
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if n.srv != srv || n.public != on {
+		// Stopped, or switched again while this was opening: discard this listener.
+		if ln != nil {
+			_ = ln.Close()
+		}
+		return err
+	}
+	if ln != nil {
+		n.closeListenerLocked()
+		n.serveLocked(ln)
+	}
 	if err != nil {
 		n.lastError = err.Error()
+		return err
 	}
-	return err
+	n.lastError = ""
+	go n.warmCert(srv)
+	return nil
+}
+
+// openListener opens :443 on srv, through Funnel when public, or to the tailnet only.
+func openListener(srv *tsnet.Server, public bool) (net.Listener, error) {
+	if public {
+		return srv.ListenFunnel("tcp", ":443")
+	}
+	return srv.ListenTLS("tcp", ":443")
 }
 
 // Stop shuts the node down but keeps its login, so the next Start reconnects without signing in.
@@ -241,19 +276,11 @@ func (n *Node) setError(msg string) {
 
 // listenLocked opens :443 on the node, through Funnel when public, and serves the proxy on it.
 func (n *Node) listenLocked() error {
-	var (
-		ln  net.Listener
-		err error
-	)
-	if n.public {
-		ln, err = n.srv.ListenFunnel("tcp", ":443")
-	} else {
-		ln, err = n.srv.ListenTLS("tcp", ":443")
-	}
+	ln, err := openListener(n.srv, n.public)
 	if err != nil {
 		if n.public {
 			// Stay reachable on the tailnet while Funnel is blocked.
-			if fallback, ferr := n.srv.ListenTLS("tcp", ":443"); ferr == nil {
+			if fallback, ferr := openListener(n.srv, false); ferr == nil {
 				n.serveLocked(fallback)
 			}
 		}

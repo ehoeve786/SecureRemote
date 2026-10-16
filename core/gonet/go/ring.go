@@ -2,6 +2,7 @@ package srnet
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"strings"
@@ -12,11 +13,16 @@ import (
 // ring keeps the last few log lines in memory instead of uploading them anywhere. It also copies
 // them to a file, when one is set, so the lines before a crash survive it.
 type ring struct {
-	mu    sync.Mutex
-	lines []string
-	max   int
-	file  *os.File
+	mu        sync.Mutex
+	lines     []string
+	max       int
+	file      *os.File
+	fileBytes int64
 }
+
+// maxFileBytes bounds the log file. Past it the file starts again from empty, so it keeps the most
+// recent lines without growing for as long as the app runs.
+const maxFileBytes = 1 << 20
 
 // writeTo starts copying lines to path, replacing what it held.
 func (r *ring) writeTo(path string) {
@@ -30,6 +36,7 @@ func (r *ring) writeTo(path string) {
 		_ = r.file.Close()
 	}
 	r.file = f
+	r.fileBytes = 0
 }
 
 func newRing(max int) *ring { return &ring{max: max} }
@@ -44,7 +51,13 @@ func (r *ring) logf(format string, args ...any) {
 	defer r.mu.Unlock()
 	r.lines = append(r.lines, line)
 	if r.file != nil {
-		_, _ = r.file.WriteString(line + "\n")
+		n, _ := r.file.WriteString(line + "\n")
+		r.fileBytes += int64(n)
+		if r.fileBytes > maxFileBytes {
+			_ = r.file.Truncate(0)
+			_, _ = r.file.Seek(0, io.SeekStart)
+			r.fileBytes = 0
+		}
 	}
 	if len(r.lines) > r.max {
 		r.lines = r.lines[len(r.lines)-r.max:]

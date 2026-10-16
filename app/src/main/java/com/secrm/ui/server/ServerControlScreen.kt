@@ -114,6 +114,7 @@ private fun TailscaleSection(app: SecureRemoteApp) {
     val ctx = LocalContext.current
     var public by remember { mutableStateOf(ts.public) }
     var confirmPublic by remember { mutableStateOf(false) }
+    var askSignOut by remember { mutableStateOf(false) }
     NetworkCard("Tailscale", st,
         "Joins your tailnet in-app (no VPN). SSH reaches tailnet hosts and subnet routes; " +
         "the MCP server is served at https://<this phone>/mcp."
@@ -162,7 +163,12 @@ private fun TailscaleSection(app: SecureRemoteApp) {
         // Android cuts a background app's network unless it runs a foreground service, which
         // would drop the tailnet (and Funnel) as soon as you switch apps.
         OnOff(st, { ts.start(); McpServerService.start(ctx) }, ts::stop)
-        if (st !is Tunnel.State.Idle) PillButton("Sign out", PillStyle.Ghost, Modifier.fillMaxWidth()) { ts.logout() }
+        if (st !is Tunnel.State.Idle) PillButton("Sign out", PillStyle.Ghost, Modifier.fillMaxWidth()) { askSignOut = true }
+        if (askSignOut) ConfirmAction(
+            "Sign out of Tailscale?",
+            "This phone leaves your tailnet. Signing in again opens the Tailscale login page.",
+            "Sign out", onConfirm = { askSignOut = false; ts.logout() }, onDismiss = { askSignOut = false },
+        )
         PillButton("Copy logs", PillStyle.Ghost, Modifier.fillMaxWidth()) {
             (ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
                 .setPrimaryClip(ClipData.newPlainText("tailscale logs", ts.logs()))
@@ -178,6 +184,7 @@ private fun WireGuardSection(app: SecureRemoteApp) {
     var configured by remember { mutableStateOf(wg.configured) }
     var config by remember { mutableStateOf("") }
     var problem by remember { mutableStateOf<String?>(null) }
+    var askRemove by remember { mutableStateOf(false) }
     NetworkCard("WireGuard", st,
         "Userspace tunnel from a wg-quick config (e.g. exported by your router). " +
         "SSH reaches the peer's AllowedIPs through it; other apps are unaffected."
@@ -192,7 +199,12 @@ private fun WireGuardSection(app: SecureRemoteApp) {
                 }
             }
             OnOff(st, wg::start, wg::stop)
-            PillButton("Remove config", PillStyle.Ghost, Modifier.fillMaxWidth()) { wg.forget(); configured = false }
+            PillButton("Remove config", PillStyle.Ghost, Modifier.fillMaxWidth()) { askRemove = true }
+            if (askRemove) ConfirmAction(
+                "Remove the WireGuard config?",
+                "This deletes the saved private key. Reconnecting needs the config file again.",
+                "Remove", onConfirm = { askRemove = false; wg.forget(); configured = false }, onDismiss = { askRemove = false },
+            )
         } else {
             OutlinedTextField(config, { config = it }, label = { Text("Paste wg-quick config") },
                 minLines = 4, visualTransformation = PasswordVisualTransformation(),
@@ -251,6 +263,7 @@ private fun McpSection(app: SecureRemoteApp) {
     val running by McpServerService.running.collectAsState()
     var expanded by remember { mutableStateOf(false) }
     var bearer by remember { mutableStateOf(app.config.mcpBearerToken.orEmpty()) }
+    var askRotate by remember { mutableStateOf(false) }
     val localToken = app.config.mcpLocalToken.orEmpty()
 
     GlassCard(Modifier.fillMaxWidth()) {
@@ -335,11 +348,17 @@ private fun McpSection(app: SecureRemoteApp) {
                     }
                     Spacer(Modifier.height(Space.xs))
                     // Old token stops working at once; MCP clients using it must be given the new one.
-                    PillButton("Rotate token", PillStyle.Danger, Modifier.fillMaxWidth()) {
-                        bearer = ByteArray(32).also(java.security.SecureRandom()::nextBytes)
-                            .joinToString("") { "%02x".format(it) }
-                            .also { app.config.mcpBearerToken = it }
-                    }
+                    PillButton("Rotate token", PillStyle.Danger, Modifier.fillMaxWidth()) { askRotate = true }
+                    if (askRotate) ConfirmAction(
+                        "Rotate the MCP token?",
+                        "Every client using the current token stops working until it gets the new one.",
+                        "Rotate", onConfirm = {
+                            askRotate = false
+                            bearer = ByteArray(32).also(java.security.SecureRandom()::nextBytes)
+                                .joinToString("") { "%02x".format(it) }
+                                .also { app.config.mcpBearerToken = it }
+                        }, onDismiss = { askRotate = false },
+                    )
                 }
 
                 Spacer(Modifier.height(Space.md))
@@ -419,4 +438,14 @@ private fun AgentEntryCard(onOpen: () -> Unit) {
 
 }
 
-
+/** A confirmation before an action that cannot be undone from the app. */
+@Composable
+private fun ConfirmAction(title: String, text: String, action: String, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = { Text(text) },
+        confirmButton = { TextButton(onClick = onConfirm) { Text(action, color = MaterialTheme.colorScheme.error) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
