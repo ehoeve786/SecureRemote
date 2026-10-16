@@ -18,11 +18,13 @@ import com.secrm.core.ssh.SshClientManager
 import com.secrm.core.ssh.tools.AuthMethod
 import com.secrm.core.ssh.tools.SavedConnection
 import com.secrm.core.ssh.tools.connectSaved
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.UUID
 
 /**
@@ -36,6 +38,8 @@ class RunCommandService : Service() {
     companion object {
         private const val CHANNEL = "secrm_plugin"
         private const val NOTIF_ID = 7302
+        private const val UNLOCK_CHANNEL = "secrm_unlock"
+        private const val UNLOCK_NOTIF_ID = 7303
         private const val EXTRA_SETTING = "setting"
         private const val EXTRA_FIRE = "fire"
 
@@ -90,6 +94,7 @@ class RunCommandService : Service() {
         // A separate client, so this doesn't replace or drop the app's live session.
         val ssh = SshClientManager().apply { proxy = app.ssh.proxy }
         return try {
+            if (conn.authMethod == AuthMethod.AGENT && !unlockVault(app)) return failure("Bitwarden is locked. Unlock it and run again.")
             val auth = authFor(conn) ?: return failure("No key or vault item for ${conn.name}")
             if (!ssh.connectSaved(conn, auth, app.connections)) return failure("Could not connect to ${conn.host}")
             val r = ssh.execResult(s.command, live?.sink(red = false), live?.sink(red = true))
@@ -103,6 +108,40 @@ class RunCommandService : Service() {
             failure(t.message ?: "Command failed")
         } finally {
             ssh.shutdown()
+        }
+    }
+
+    /**
+     * Unlocks the Bitwarden vault if it is locked, via the fingerprint prompt in [UnlockActivity].
+     * A background service can't show that prompt itself, so a full-screen notification opens it.
+     */
+    private suspend fun unlockVault(app: SecureRemoteApp): Boolean {
+        if (app.vault.keys != null) return true
+        if (!app.vault.isConfigured) return false
+        val nm = getSystemService(NotificationManager::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            nm.createNotificationChannel(NotificationChannel(UNLOCK_CHANNEL, "Bitwarden unlock", NotificationManager.IMPORTANCE_HIGH))
+        }
+        val open = PendingIntent.getActivity(
+            this, 0, Intent(this, UnlockActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val done = CompletableDeferred<Boolean>()
+        UnlockActivity.waiting = done
+        nm.notify(UNLOCK_NOTIF_ID, NotificationCompat.Builder(this, UNLOCK_CHANNEL)
+            .setSmallIcon(android.R.drawable.ic_lock_idle_lock)
+            .setContentTitle("Unlock Bitwarden to run the command")
+            .setContentText("Tap to unlock with your fingerprint")
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setContentIntent(open)
+            .setFullScreenIntent(open, true)
+            .build())
+        return try {
+            withTimeoutOrNull(120_000) { done.await() } == true
+        } finally {
+            nm.cancel(UNLOCK_NOTIF_ID)
+            UnlockActivity.waiting = null
         }
     }
 
