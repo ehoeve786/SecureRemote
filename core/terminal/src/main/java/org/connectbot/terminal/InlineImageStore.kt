@@ -369,7 +369,7 @@ internal class InlineImageStore(var limits: InlineImageLimits, private val handl
             }
         }
         placements.removeAll { it.iterm && it.coverage.all { row -> row.isEmpty() } }
-        trimHistory(1000)
+        trimHistory(MAX_HISTORY_LINES)
     }
 
     @Synchronized
@@ -580,6 +580,8 @@ internal class InlineImageStore(var limits: InlineImageLimits, private val handl
     }
 
     companion object {
+        /** Matches the emulator's scrollback cap so placements stay with the text they belong to. */
+        const val MAX_HISTORY_LINES = 10_000
         private val decoder = Executors.newSingleThreadExecutor { task -> Thread(task, "terminal-images").apply { isDaemon = true } }
     }
 }
