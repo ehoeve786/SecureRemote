@@ -79,12 +79,12 @@ class RunCommandService : Service() {
             val auth = authFor(conn) ?: return failure("No key or vault item for ${conn.name}")
             if (!ssh.connectSaved(conn, auth, app.connections)) return failure("Could not connect to ${conn.host}")
             val r = ssh.execResult(s.command)
-            val vars = Bundle()
-            if (s.variable.isNotBlank()) {
-                vars.putString(s.variable, r.stdout)
-                vars.putString(s.variable + "_exit", r.exitCode.toString())
+            PluginProtocol.RESULT_OK to Bundle().apply {
+                putString(PluginProtocol.VAR_STDOUT, r.stdout)
+                putString(PluginProtocol.VAR_STDERR, r.stderr)
+                putString(PluginProtocol.VAR_EXIT, r.exitCode.toString())
+                putString(PluginProtocol.VAR_ERR, PluginProtocol.RESULT_OK.toString())
             }
-            PluginProtocol.RESULT_OK to vars
         } catch (t: Throwable) {
             failure(t.message ?: "Command failed")
         } finally {
@@ -104,7 +104,10 @@ class RunCommandService : Service() {
     }
 
     private fun failure(message: String): Pair<Int, Bundle> =
-        PluginProtocol.RESULT_FAILED to Bundle().apply { putString(PluginProtocol.VARNAME_ERROR, message) }
+        PluginProtocol.RESULT_FAILED to Bundle().apply {
+            putString(PluginProtocol.VAR_ERR, PluginProtocol.RESULT_FAILED.toString())
+            putString(PluginProtocol.VAR_ERRMSG, message)
+        }
 
     private fun notification(s: RunSetting): Notification {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
