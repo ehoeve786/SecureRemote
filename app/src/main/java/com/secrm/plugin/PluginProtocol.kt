@@ -21,7 +21,13 @@ object PluginProtocol {
 
     /** Asks the host to wait this long (ms) for the action; the host may ignore it. */
     const val REQUESTED_TIMEOUT_NEVER = 3_600_000
-    const val VARNAME_ERROR = "%errmsg"
+
+    /** Output variables, named as termux-tasker names them so existing macros work unchanged. */
+    const val VAR_STDOUT = "%stdout"
+    const val VAR_STDERR = "%stderr"
+    const val VAR_EXIT = "%result"
+    const val VAR_ERR = "%err"
+    const val VAR_ERRMSG = "%errmsg"
 
     private const val EXTRAS = "net.dinglisch.android.tasker.extras."
     const val EXTRA_REQUESTED_TIMEOUT = EXTRAS + "REQUESTED_TIMEOUT"

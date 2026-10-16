@@ -16,7 +16,7 @@ import com.secrm.SecureRemoteApp
 import com.secrm.design.SecrmTheme
 import com.secrm.design.Space
 
-/** The action's configuration screen in MacroDroid/Tasker: host, command, output variable, wait. */
+/** The action's configuration screen in MacroDroid/Tasker: host, command, wait. */
 class EditSettingActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -45,10 +45,8 @@ class EditSettingActivity : ComponentActivity() {
 private fun EditScreen(hosts: List<String>, initial: RunSetting?, onCancel: () -> Unit, onSave: (RunSetting) -> Unit) {
     var host by remember { mutableStateOf(initial?.connection ?: hosts.firstOrNull().orEmpty()) }
     var command by remember { mutableStateOf(initial?.command.orEmpty()) }
-    var variable by remember { mutableStateOf(initial?.variable?.takeIf { it.isNotBlank() } ?: "%result") }
     var block by remember { mutableStateOf(initial?.block ?: true) }
     var picking by remember { mutableStateOf(false) }
-    val varOk = RunSetting.validVariable(variable.trim())
 
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(Space.md),
@@ -66,13 +64,6 @@ private fun EditScreen(hosts: List<String>, initial: RunSetting?, onCancel: () -
             value = command, onValueChange = { command = it },
             label = { Text("Command") }, minLines = 2, modifier = Modifier.fillMaxWidth(),
         )
-        OutlinedTextField(
-            value = variable, onValueChange = { variable = it }, singleLine = true,
-            label = { Text("Output variable") }, isError = !varOk, modifier = Modifier.fillMaxWidth(),
-            supportingText = {
-                Text(if (varOk) "stdout; exit code goes to ${variable.trim()}_exit" else "Use % then lowercase letters, e.g. %result")
-            },
-        )
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.weight(1f)) {
                 Text("Wait for command to finish")
@@ -83,8 +74,8 @@ private fun EditScreen(hosts: List<String>, initial: RunSetting?, onCancel: () -
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
             TextButton(onClick = onCancel) { Text("Cancel") }
             Button(
-                onClick = { onSave(RunSetting(host, command.trim(), variable.trim(), block)) },
-                enabled = host.isNotBlank() && command.isNotBlank() && varOk,
+                onClick = { onSave(RunSetting(host, command.trim(), block)) },
+                enabled = host.isNotBlank() && command.isNotBlank(),
             ) { Text("Save") }
         }
     }

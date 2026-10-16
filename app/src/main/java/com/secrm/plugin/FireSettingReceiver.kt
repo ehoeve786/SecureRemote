@@ -5,8 +5,9 @@ import android.content.Context
 import android.content.Intent
 
 /**
- * Runs the action when MacroDroid/Tasker fires it. A blocking action returns PENDING and is finished
- * by [RunCommandService] with the output variables; a non-blocking one returns at once.
+ * Runs the action when MacroDroid/Tasker fires it. Only an ordered broadcast can wait: a blocking
+ * action there returns PENDING and [RunCommandService] finishes it with the output variables;
+ * otherwise it returns at once.
  */
 class FireSettingReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -16,7 +17,8 @@ class FireSettingReceiver : BroadcastReceiver() {
             resultCode = PluginProtocol.RESULT_FAILED
             return
         }
-        RunCommandService.start(context, setting, intent)
-        if (setting.block) resultCode = PluginProtocol.RESULT_PENDING
+        val waits = setting.block && isOrderedBroadcast
+        RunCommandService.start(context, setting.copy(block = waits), intent)
+        if (waits) resultCode = PluginProtocol.RESULT_PENDING
     }
 }
