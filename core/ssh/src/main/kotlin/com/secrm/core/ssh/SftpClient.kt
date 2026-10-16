@@ -47,7 +47,7 @@ class SftpClient(private val ssh: SshClientManager) {
 
     suspend fun list(dir: String): List<SftpEntry> = run { ch ->
         ch.ls(dir).filterIsInstance<ChannelSftp.LsEntry>()
-            .filter { it.filename != "." && it.filename != ".." }
+            .filter { it.filename != "." && it.filename != ".." && '/' !in it.filename && '\u0000' !in it.filename }
             .map { e ->
                 val path = join(dir, e.filename)
                 val a = e.attrs
