@@ -98,6 +98,7 @@ func TestParseRejectsBadConfigs(t *testing.T) {
 		"peer without key":    {iface + "[Peer]\nAllowedIPs = 10.0.0.0/8\n", "needs a PublicKey"},
 		"endpoint no port":    {iface + peer + "Endpoint = vpn.example.com\n", "host and port"},
 		"bad address":         {"[Interface]\nPrivateKey = " + b64(alicePrivHex) + "\nAddress = 10.0.0.999/32\n" + peer, "is not an address"},
+		"mtu out of range":    {iface + "MTU = 99999\n" + peer, "outside 576-9000"},
 	}
 	for name, c := range cases {
 		_, err := parseWgQuick(c.text)

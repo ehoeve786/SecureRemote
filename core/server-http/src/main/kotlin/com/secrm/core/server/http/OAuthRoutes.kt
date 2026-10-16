@@ -115,7 +115,10 @@ internal fun Route.oauthRoutes(oauth: McpOAuth, mcpPath: String) {
         val p = call.boundedText()?.let { parseQueryString(it) } ?: return@post call.respond(HttpStatusCode.PayloadTooLarge)
         val redirect = p["redirect_uri"]
         if (!McpOAuth.allowedRedirect(redirect)) return@post call.respondText("Only Claude can connect", status = HttpStatusCode.BadRequest)
-        val code = oauth.authorize(p["pairing"].orEmpty(), p["code_challenge"].orEmpty(), redirect!!)
+        // PKCE is mandatory: without a challenge the code could never be redeemed.
+        val challenge = p["code_challenge"]
+        if (challenge.isNullOrEmpty()) return@post call.respondText("Missing code challenge", status = HttpStatusCode.BadRequest)
+        val code = oauth.authorize(p["pairing"].orEmpty(), challenge, redirect!!)
             ?: return@post call.respondText(pairingPage(redirect, p["state"], p["code_challenge"], error = true), ContentType.Text.Html)
         call.respondRedirect("$redirect?code=${enc(code)}&state=${enc(p["state"].orEmpty())}")
     }
