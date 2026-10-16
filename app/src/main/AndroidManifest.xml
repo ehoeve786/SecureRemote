@@ -24,6 +24,30 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <!-- Tasker/MacroDroid action plugin: configure a command, then run it when the macro fires. -->
+        <activity
+            android:name=".plugin.EditSettingActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:label="Run SSH command">
+            <intent-filter>
+                <action android:name="com.twofortyfouram.locale.intent.action.EDIT_SETTING" />
+            </intent-filter>
+        </activity>
+        <receiver
+            android:name=".plugin.FireSettingReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.twofortyfouram.locale.intent.action.FIRE_SETTING" />
+            </intent-filter>
+        </receiver>
+        <service
+            android:name=".plugin.RunCommandService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="plugin_command" />
+        </service>
         <service
             android:name=".service.McpServerService"
             android:exported="false"
