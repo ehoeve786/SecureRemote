@@ -48,6 +48,7 @@ class CallDispatcher(private val audit: AuditSink = AuditSink.Noop) {
     fun specs(): List<ToolSpec> = handlers.values.map { it.first }
 
     suspend fun dispatch(session: Session, name: String, args: JsonObject): ToolResult {
+        val started = System.nanoTime()
         val handler = handlers[name]?.second
         val result = if (handler == null) {
             ToolResult.error("unknown_tool", "Call tools/list first.", "Unknown tool: $name")
@@ -56,15 +57,15 @@ class CallDispatcher(private val audit: AuditSink = AuditSink.Noop) {
         } catch (t: Throwable) {
             ToolResult.error("internal_error", "Retry or check server logs.", t.message ?: "Tool failed")
         }
-        // Unknown names are audited too: probing for tools is worth seeing.
-        audit.record(session, name, args, result)
+        // Unknown names are audited too: probing for tools is worth seeing. An audit failure must not fail the call.
+        runCatching { audit.record(session, name, args, result, System.nanoTime() - started) }
         return result
     }
 
     interface AuditSink {
-        suspend fun record(session: Session, tool: String, args: JsonObject, result: ToolResult)
+        suspend fun record(session: Session, tool: String, args: JsonObject, result: ToolResult, durationNanos: Long)
         object Noop : AuditSink {
-            override suspend fun record(session: Session, tool: String, args: JsonObject, result: ToolResult) {}
+            override suspend fun record(session: Session, tool: String, args: JsonObject, result: ToolResult, durationNanos: Long) {}
         }
     }
 }

@@ -60,7 +60,8 @@ object SshTools {
                         ?: return ToolResult.error("missing_argument", "Provide 'connection'.", "Missing connection")
                     val cmd = args["command"]?.jsonPrimitive?.contentOrNull
                         ?: return ToolResult.error("missing_argument", "Provide 'command'.", "Missing command")
-                    val timeout = args["timeout_ms"]?.jsonPrimitive?.longOrNull ?: 30_000L
+                    // Clamped: a caller cannot hold a session open indefinitely.
+                    val timeout = (args["timeout_ms"]?.jsonPrimitive?.longOrNull ?: 30_000L).coerceIn(1_000L, 300_000L)
 
                     val conn = saved.find(name)
                         ?: return ToolResult.error("unknown_connection",
@@ -68,6 +69,11 @@ object SshTools {
                     if (!conn.allowMcpExec) return ToolResult.error("not_permitted",
                         "Enable MCP exec for this connection in the app.",
                         "Connection '$name' is not exposed for exec.")
+
+                    // The host key must already be trusted. Trusting a first-seen key is the owner's job, in the app.
+                    if (conn.hostKey == null) return ToolResult.error("host_not_pinned",
+                        "Connect to it once in the SecureRemote app to trust its host key.",
+                        "Connection '$name' has no trusted host key yet.")
 
                     // Resolve auth from the connection.
                     val auth: SshAuth = when (conn.authMethod) {
@@ -94,7 +100,7 @@ object SshTools {
 
                     // A separate client, so this neither replaces nor drops the app's live session.
                     val client = SshClientManager().apply { proxy = ssh.proxy }
-                    if (!client.connectSaved(conn, auth, saved)) return ToolResult.error("connect_failed",
+                    if (!client.connectSaved(conn, auth, saved, allowRediscover = false)) return ToolResult.error("connect_failed",
                         "Check host reachability and credentials.",
                         "SSH connect failed to ${conn.host}:${conn.port}")
 

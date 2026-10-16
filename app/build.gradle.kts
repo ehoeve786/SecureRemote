@@ -26,6 +26,7 @@ android {
             storePassword = pw; keyAlias = "secrm"; keyPassword = pw
         }
         buildTypes.getByName("debug").signingConfig = ci
+        buildTypes.getByName("release").signingConfig = ci
     }
     packaging {
         // Compress native libraries in the APK (the Go networking library is large).

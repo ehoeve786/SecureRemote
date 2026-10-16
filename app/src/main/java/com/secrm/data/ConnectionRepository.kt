@@ -15,12 +15,12 @@ class ConnectionRepository(
 
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
-    override fun list(): List<SavedConnection> {
+    override fun list(): List<SavedConnection> = runCatching { readStrict() }.getOrDefault(emptyList())
+
+    /** Throws if the stored list is unreadable. Writes use this, so they never replace it with a partial list. */
+    private fun readStrict(): List<SavedConnection> {
         val raw = config.sshConnectionsJson.orEmpty()
-        if (raw.isNotBlank()) {
-            return runCatching { json.decodeFromString<List<SavedConnection>>(raw) }
-                .getOrDefault(emptyList())
-        }
+        if (raw.isNotBlank()) return json.decodeFromString(raw)
         val host = config.sshHost.orEmpty()
         if (host.isBlank()) return emptyList()
         val legacy = SavedConnection(
@@ -38,14 +38,17 @@ class ConnectionRepository(
 
     override fun save(connection: SavedConnection) = upsert(connection)
 
+    /** Synchronized: the MCP path and the app both save, and an unlocked read-modify-write loses updates. */
+    @Synchronized
     fun upsert(connection: SavedConnection) {
-        val current = list().toMutableList()
+        val current = readStrict().toMutableList()
         val idx = current.indexOfFirst { it.name == connection.name }
         if (idx >= 0) current[idx] = connection else current.add(connection)
         write(current)
     }
 
-    fun delete(name: String) = write(list().filterNot { it.name == name })
+    @Synchronized
+    fun delete(name: String) = write(readStrict().filterNot { it.name == name })
 
     private fun write(list: List<SavedConnection>) {
         config.sshConnectionsJson = json.encodeToString(list)

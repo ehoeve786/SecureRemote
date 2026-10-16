@@ -42,21 +42,22 @@ jobs:
           [ -n "$KS" ] || { echo "::error::Add SIGNING_KEYSTORE and SIGNING_PASSWORD repo secrets"; exit 1; }
           echo "$KS" | base64 -d > signing.jks
       - env: { SIGNING_PASSWORD: "${{ secrets.SIGNING_PASSWORD }}" }
-        run: set -o pipefail; gradle :app:assembleDebug --no-daemon 2>&1 | tee build.log
+        run: set -o pipefail; gradle :app:assembleRelease --no-daemon 2>&1 | tee build.log
       - if: failure()
         run: |
           grep -E '^e: |What went wrong|Could not (find|resolve|GET)|Dependency .* requires|^> .*issues? (was|were) found' -A3 build.log | head -60 | sed 's/^/::error::/'
       - uses: actions/upload-artifact@v4
         with:
-          name: app-debug
-          path: app/build/outputs/apk/debug/*.apk
+          name: app-release
+          path: app/build/outputs/apk/release/*.apk
       # Fixed public link to the newest APK:
       # https://github.com/ehoeve786/SecureRemote/releases/download/latest/SecureRemote.apk
       - name: Publish APK
-        if: github.event_name == 'push'
+        # Main only: a branch build is not published under the public "latest" link.
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env: { GH_TOKEN: "${{ github.token }}" }
         run: |
-          cp app/build/outputs/apk/debug/*.apk SecureRemote.apk
+          cp app/build/outputs/apk/release/*.apk SecureRemote.apk
           gh release view latest >/dev/null 2>&1 || gh release create latest --prerelease --title "Latest build" --notes "Newest CI build."
           gh release upload latest SecureRemote.apk --clobber
 

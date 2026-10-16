@@ -214,6 +214,22 @@ class SshClientManager {
         r.stdout + if (r.stderr.isNotBlank()) "\n[stderr]\n${r.stderr}" else ""
     }
 
+    /** Keeps the first [limit] bytes and marks the rest as dropped, so a runaway command cannot exhaust memory. */
+    private class CappedBuffer(private val limit: Int) : OutputStream() {
+        private val buf = ByteArrayOutputStream()
+        private var dropped = false
+
+        override fun write(b: Int) { if (buf.size() < limit) buf.write(b) else dropped = true }
+        override fun write(b: ByteArray, off: Int, len: Int) {
+            val room = limit - buf.size()
+            if (len > room) dropped = true
+            if (room > 0) buf.write(b, off, minOf(len, room))
+        }
+
+        fun text(): String = buf.toString(Charsets.UTF_8.name()) +
+            if (dropped) "\n[output truncated at $limit bytes]" else ""
+    }
+
     data class ExecResult(val stdout: String, val stderr: String, val exitCode: Int)
 
     /** Runs [command]; [watchOut] and [watchErr], if given, also get its output as it arrives. */
@@ -221,11 +237,12 @@ class SshClientManager {
         command: String,
         watchOut: OutputStream? = null,
         watchErr: OutputStream? = null,
+        maxBytes: Int = 1 shl 20,
     ): ExecResult = withContext(Dispatchers.IO) {
         val s = session ?: error("No active SSH session")
         val ch = s.openChannel("exec") as com.jcraft.jsch.ChannelExec
-        val out = ByteArrayOutputStream()
-        val err = ByteArrayOutputStream()
+        val out = CappedBuffer(maxBytes)
+        val err = CappedBuffer(maxBytes)
         coroutineScope {
             // Cancelling the caller runs this watcher, which disconnects the channel and unblocks the read below.
             val watcher = launch(start = CoroutineStart.UNDISPATCHED) {
@@ -240,7 +257,7 @@ class SshClientManager {
                 input.copyTo(tee(out, watchOut))
             } finally { watcher.cancel(); ch.disconnect() }
         }
-        ExecResult(out.toString(Charsets.UTF_8.name()), err.toString(Charsets.UTF_8.name()), ch.exitStatus)
+        ExecResult(out.text(), err.text(), ch.exitStatus)
     }
 
     /** [a], also written to [b] when it is given. */
