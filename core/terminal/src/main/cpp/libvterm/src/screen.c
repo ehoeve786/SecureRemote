@@ -721,8 +721,10 @@ static void resize_buffer(VTermScreen *screen, int bufidx, int new_rows, int new
 
   /* We really expect the cursor position to be set by now */
   if(active && (new_cursor.row == -1 || new_cursor.col == -1)) {
-    fprintf(stderr, "screen_resize failed to update cursor position\n");
-    abort();
+    /* Reflow can leave the cursor unplaced when the cursor's wrapped group does not fit.
+     * Keep it on screen rather than aborting the host app on terminal-driven state. */
+    new_cursor.row = 0;
+    new_cursor.col = old_cursor.col < new_cols ? old_cursor.col : new_cols-1;
   }
 
   if(old_row >= 0 && bufidx == BUFIDX_PRIMARY) {
