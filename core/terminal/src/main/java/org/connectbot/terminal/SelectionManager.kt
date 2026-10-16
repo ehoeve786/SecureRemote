@@ -514,7 +514,7 @@ internal class SelectionManager {
                     SelectionMode.NONE -> {}
                 }
             }
-        }.trim()
+        }.trimEnd()
     }
 
     fun isCellSelected(row: Int, col: Int, line: TerminalLine? = null): Boolean {
