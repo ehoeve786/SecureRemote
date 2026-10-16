@@ -194,7 +194,9 @@ private fun KeyImportSheet(
             val text = withContext(Dispatchers.IO) {
                 runCatching {
                     ctx.contentResolver.openInputStream(uri)?.use {
-                        it.readBytes().toString(Charsets.UTF_8)
+                        val bytes = it.readNBytes(MAX_KEY_BYTES + 1)
+                        check(bytes.size <= MAX_KEY_BYTES) { "Key file is too large" }
+                        bytes.toString(Charsets.UTF_8)
                     }.orEmpty()
                 }.getOrDefault("")
             }
@@ -276,3 +278,6 @@ private fun KeyImportSheet(
         }
     }
 }
+
+/** Real keys are a few kilobytes; anything larger is not a key file. */
+private const val MAX_KEY_BYTES = 64 * 1024

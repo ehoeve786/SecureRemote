@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import android.os.PersistableBundle
 import com.secrm.SecureRemoteApp
@@ -209,6 +210,7 @@ private fun WireGuardSection(app: SecureRemoteApp) {
         } else {
             OutlinedTextField(config, { config = it }, label = { Text("Paste wg-quick config") },
                 minLines = 4, visualTransformation = PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(autoCorrect = false),
                 modifier = Modifier.fillMaxWidth())
             PillButton("Save", PillStyle.Primary, Modifier.fillMaxWidth(), config.isNotBlank()) {
                 problem = wg.configure(config)
@@ -305,7 +307,7 @@ private fun McpSection(app: SecureRemoteApp) {
             }
             pairing?.let {
                 Text("Pairing code (10 min, single use)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(it, style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface)
+                SecretOrPlaceholder(it)
             }
 
             Spacer(Modifier.height(Space.md))

@@ -98,7 +98,10 @@ fun BitwardenScreen(app: SecureRemoteApp, onBack: () -> Unit) {
                         Field(password, { password = it }, "Master password", hidden = true)
                         PillButton("Sign in", PillStyle.Primary, Modifier.fillMaxWidth(),
                             !busy && listOf(server, clientId, secret, password).all(String::isNotBlank)) {
-                            act { vault.login(server, clientId, secret, password) { activity.authenticate() }; password = "" }
+                            act {
+                                try { vault.login(server, clientId, secret, password) { activity.authenticate() } }
+                                finally { password = ""; secret = "" }
+                            }
                         }
                     }
                 }

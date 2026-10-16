@@ -191,8 +191,14 @@ class SftpController(
 
     fun download(e: SftpEntry, dest: Uri) {
         transfer(Transfer(false, e.name, 0, e.size, 1, 1)) { setProgress ->
-            val ok = withContext(Dispatchers.IO) {
-                app.contentResolver.openOutputStream(dest)!!.use { client.download(e.path, it, { cancelRequested }, setProgress) }
+            val ok = try {
+                withContext(Dispatchers.IO) {
+                    app.contentResolver.openOutputStream(dest)!!.use { client.download(e.path, it, { cancelRequested }, setProgress) }
+                }
+            } catch (t: Throwable) {
+                // Don't leave a truncated file behind after a failed download.
+                runCatching { DocumentsContract.deleteDocument(app.contentResolver, dest) }
+                throw t
             }
             if (cancelRequested) runCatching { DocumentsContract.deleteDocument(app.contentResolver, dest) }
             ok

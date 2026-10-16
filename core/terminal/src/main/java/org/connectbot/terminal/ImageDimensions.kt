@@ -11,7 +11,7 @@ import java.io.InputStream
 internal data class ImageDimensions(val width: Int, val height: Int, val mime: String) {
     companion object {
         // JPEG metadata can precede SOF; bound the search independently of upload size.
-        private const val HEADER_LIMIT = 32 * 1024
+        private const val HEADER_LIMIT = 256 * 1024
 
         fun read(bytes: ImageBytes, limits: InlineImageLimits): ImageDimensions = bytes.input().use { input ->
             val reader = Header(input, minOf(bytes.size, HEADER_LIMIT))
