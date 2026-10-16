@@ -18,11 +18,13 @@ class KeyRepository(private val config: EncryptedConfigStore) {
     private val listKey = "ssh.keys"
     private fun pemKey(id: String) = "ssh.key.$id.pem"
 
-    fun list(): List<SavedKey> {
+    fun list(): List<SavedKey> = runCatching { readStrict() }.getOrDefault(emptyList())
+
+    /** Throws if the stored list is unreadable. Writes use this, so they never replace it with a partial list. */
+    private fun readStrict(): List<SavedKey> {
         val raw = config.get(listKey).orEmpty()
         if (raw.isBlank()) return emptyList()
-        return runCatching { json.decodeFromString<List<SavedKey>>(raw) }
-            .getOrDefault(emptyList())
+        return json.decodeFromString<List<SavedKey>>(raw)
     }
 
     fun find(id: String): SavedKey? = list().firstOrNull { it.id == id }
@@ -39,7 +41,7 @@ class KeyRepository(private val config: EncryptedConfigStore) {
         passphrase: String = ""
     ): String {
         val id = UUID.randomUUID().toString()
-        val updated = list() + SavedKey(
+        val updated = readStrict() + SavedKey(
             id = id,
             name = name.trim(),
             algorithm = algorithm,
@@ -53,13 +55,13 @@ class KeyRepository(private val config: EncryptedConfigStore) {
 
     @Synchronized
     fun updateMetadata(key: SavedKey) {
-        val updated = list().map { if (it.id == key.id) key else it }
+        val updated = readStrict().map { if (it.id == key.id) key else it }
         config.put(listKey, json.encodeToString(updated))
     }
 
     @Synchronized
     fun delete(id: String) {
-        val updated = list().filterNot { it.id == id }
+        val updated = readStrict().filterNot { it.id == id }
         config.put(listKey, json.encodeToString(updated))
         config.remove(pemKey(id))
     }

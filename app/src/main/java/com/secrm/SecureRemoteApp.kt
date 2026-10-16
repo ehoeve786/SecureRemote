@@ -20,6 +20,7 @@ import com.secrm.data.BitwardenVault
 import com.secrm.data.ConnectionRepository
 import com.secrm.data.KeyRepository
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 
 class SecureRemoteApp : Application() {
     lateinit var config: EncryptedConfigStore; private set
@@ -62,17 +63,26 @@ class SecureRemoteApp : Application() {
         connections = ConnectionRepository(config, keys, vault)
         dispatcher = CallDispatcher(object : CallDispatcher.AuditSink {
             override suspend fun record(
-                s: Session, tool: String, args: JsonObject, result: ToolResult
+                s: Session, tool: String, args: JsonObject, result: ToolResult, durationNanos: Long
             ) {
                 audit.record(AuditEntry(
                     ts = java.time.Instant.now().toString(),
                     tool = tool,
-                    argsRedacted = args.toString(),
+                    argsRedacted = redacted(args).toString(),
                     outcome = if (result.isError) "error" else "ok",
-                    durationMs = 0
+                    durationMs = durationNanos / 1_000_000
                 ))
             }
         })
         SshTools.register(dispatcher, connections, newClient())
+    }
+
+    /** Commands and secrets never reach the audit log; their length does, so the entry is still useful. */
+    private fun redacted(args: JsonObject) = JsonObject(args.mapValues { (k, v) ->
+        if (k in SECRET_ARGS) JsonPrimitive("[redacted ${v.toString().length} chars]") else v
+    })
+
+    private companion object {
+        val SECRET_ARGS = setOf("command", "password", "secret", "token", "passphrase")
     }
 }

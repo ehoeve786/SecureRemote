@@ -227,7 +227,7 @@ private fun McpSection(app: SecureRemoteApp) {
     val ctx = LocalContext.current
     val running by McpServerService.running.collectAsState()
     var expanded by remember { mutableStateOf(false) }
-    val bearer = app.config.mcpBearerToken.orEmpty()
+    var bearer by remember { mutableStateOf(app.config.mcpBearerToken.orEmpty()) }
     val localToken = app.config.mcpLocalToken.orEmpty()
 
     GlassCard(Modifier.fillMaxWidth()) {
@@ -309,6 +309,13 @@ private fun McpSection(app: SecureRemoteApp) {
                     PillButton("Copy token", PillStyle.Ghost, Modifier.fillMaxWidth()) {
                         val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                         cm.setPrimaryClip(ClipData.newPlainText("mcp bearer", bearer))
+                    }
+                    Spacer(Modifier.height(Space.xs))
+                    // Old token stops working at once; MCP clients using it must be given the new one.
+                    PillButton("Rotate token", PillStyle.Danger, Modifier.fillMaxWidth()) {
+                        bearer = ByteArray(32).also(java.security.SecureRandom()::nextBytes)
+                            .joinToString("") { "%02x".format(it) }
+                            .also { app.config.mcpBearerToken = it }
                     }
                 }
 

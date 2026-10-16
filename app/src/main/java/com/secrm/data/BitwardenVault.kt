@@ -85,6 +85,8 @@ class BitwardenVault(private val config: EncryptedConfigStore) {
     // ── Network ────────────────────────────────────────────────────────────
 
     private fun fetch(server: String, id: String, secret: String): Pair<JsonObject, JsonObject> {
+        // The client secret and the vault key material travel in these requests: never over plain HTTP.
+        require(server.startsWith("https://", ignoreCase = true)) { "Bitwarden server address must start with https://" }
         val cloud = Regex("https://vault\\.bitwarden\\.(com|eu)").matches(server)
         val identity = if (cloud) server.replace("vault.", "identity.") else "$server/identity"
         val api = if (cloud) server.replace("vault.", "api.") else "$server/api"
@@ -100,6 +102,8 @@ class BitwardenVault(private val config: EncryptedConfigStore) {
 
     private fun http(url: String, form: String?, bearer: String?): JsonObject {
         val c = URL(url).openConnection() as HttpURLConnection
+        c.connectTimeout = 15_000
+        c.readTimeout = 30_000
         bearer?.let { c.setRequestProperty("Authorization", "Bearer $it") }
         // Bitwarden rejects requests that don't identify the client and its version.
         c.setRequestProperty("Bitwarden-Client-Name", "cli")

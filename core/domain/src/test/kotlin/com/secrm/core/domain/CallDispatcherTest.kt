@@ -13,7 +13,7 @@ class CallDispatcherTest {
 
     private class Recorder : CallDispatcher.AuditSink {
         val seen = mutableListOf<Triple<String, Boolean, String?>>()
-        override suspend fun record(session: Session, tool: String, args: JsonObject, result: ToolResult) {
+        override suspend fun record(session: Session, tool: String, args: JsonObject, result: ToolResult, durationNanos: Long) {
             seen += Triple(tool, result.isError, result.errorCode)
         }
     }

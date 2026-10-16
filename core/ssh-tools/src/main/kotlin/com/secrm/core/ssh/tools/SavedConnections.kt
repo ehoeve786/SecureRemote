@@ -18,7 +18,8 @@ data class SavedConnection(
     val via: String? = null,
     /** Host key (base64) trusted on first connect; also how the device is found if its IP changes. */
     val hostKey: String? = null,
-    val allowMcpExec: Boolean = true,
+    /** Opt-in: a connection is not reachable over MCP until its owner enables it. */
+    val allowMcpExec: Boolean = false,
     val allowMcpRead: Boolean = true
 )
 
@@ -45,13 +46,20 @@ interface SavedConnections {
  * private address fails, follows the device to its new address by host key (Tidegate's
  * HostRediscovery) and saves it.
  */
-suspend fun SshClientManager.connectSaved(conn: SavedConnection, auth: SshAuth, saved: SavedConnections): Boolean {
+suspend fun SshClientManager.connectSaved(
+    conn: SavedConnection,
+    auth: SshAuth,
+    saved: SavedConnections,
+    /** Off for MCP callers: a moved device is only followed when the owner has connected in the app. */
+    allowRediscover: Boolean = true,
+): Boolean {
     fun cfg(host: String) = SshConfig(host = host, port = conn.port, username = conn.user, auth = auth, via = conn.via, hostKey = conn.hostKey, name = conn.name)
     if (connect(cfg(conn.host))) {
         if (conn.hostKey == null) saved.save(conn.copy(hostKey = hostKey))
         return true
     }
-    val moved = conn.hostKey?.takeIf { conn.via == null }?.let { rediscover(conn.host, conn.port, it) } ?: return false
+    val moved = (if (allowRediscover) conn.hostKey?.takeIf { conn.via == null }?.let { rediscover(conn.host, conn.port, it) } else null)
+        ?: return false
     saved.save(conn.copy(host = moved))
     return connect(cfg(moved))
 }

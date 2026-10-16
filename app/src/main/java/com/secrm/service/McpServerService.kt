@@ -10,12 +10,16 @@ import com.secrm.R
 import com.secrm.SecureRemoteApp
 import com.secrm.core.server.http.McpAuth
 import com.secrm.core.server.http.McpHttpServer
+import android.util.Log
+import java.security.MessageDigest
+import java.security.SecureRandom
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 class McpServerService : Service() {
     companion object {
+        private const val TAG = "McpServerService"
         private val _running = MutableStateFlow(false)
         /** Whether the server is up; the settings screen shows this. */
         val running: StateFlow<Boolean> = _running.asStateFlow()
@@ -58,21 +62,35 @@ class McpServerService : Service() {
         if (server?.isRunning() == true) return
         val app = application as SecureRemoteApp
         val bearer = app.config.mcpBearerToken.takeIf { !it.isNullOrBlank() }
-            ?: java.util.UUID.randomUUID().toString().replace("-", "")
-                .also { app.config.mcpBearerToken = it }
+            ?: newSecret().also { app.config.mcpBearerToken = it }
         val local = app.config.mcpLocalToken.takeIf { !it.isNullOrBlank() }
-            ?: ByteArray(32).also(java.security.SecureRandom()::nextBytes)
-                .joinToString("") { "%02x".format(it) }
-                .also { app.config.mcpLocalToken = it }
+            ?: newSecret().also { app.config.mcpLocalToken = it }
 
-        server = McpHttpServer(
+        // Read on every request, so a rotated token takes effect without a restart.
+        val remote: (String) -> Boolean = { presented ->
+            val expected = app.config.mcpBearerToken.orEmpty()
+            (expected.isNotEmpty() && MessageDigest.isEqual(presented.toByteArray(), expected.toByteArray())) ||
+                app.oauth.isValid(presented)
+        }
+        val started = McpHttpServer(
             dispatcher = app.dispatcher,
-            auth = McpAuth(7823, 7824, local,
-                setOf("*.ts.net")) { it == bearer || app.oauth.isValid(it) },
+            auth = McpAuth(7823, 7824, local, setOf("*.ts.net"), remote),
             oauth = app.oauth
-        ).also { it.start() }
+        )
+        try {
+            started.start()
+        } catch (e: Exception) {
+            // Typically a port already in use. Stop cleanly rather than crash the app.
+            Log.e(TAG, "MCP server did not start: ${e.message}", e)
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+            return
+        }
+        server = started
         _running.value = true
     }
+
+    private fun newSecret() = ByteArray(32).also(SecureRandom()::nextBytes).joinToString("") { "%02x".format(it) }
 
     private fun stopServer() { server?.stop(); server = null; _running.value = false }
     override fun onDestroy() { stopServer(); super.onDestroy() }
