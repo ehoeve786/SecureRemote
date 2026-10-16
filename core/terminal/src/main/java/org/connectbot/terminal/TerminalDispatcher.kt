@@ -79,7 +79,10 @@ internal class QueuedTerminal(private val terminal: TerminalEmulatorImpl) : Term
 internal fun dispatchText(terminal: TerminalEmulator, modifiers: Int, text: String, normalizeNewlines: Boolean) {
     var index = 0
     while (index < text.length) {
-        val cp = text.codePointAt(index)
+        // An unpaired surrogate from the input method is not a code point the emulator accepts.
+        // It is sent as U+FFFD instead of throwing on the input thread.
+        val raw = text.codePointAt(index)
+        val cp = if (CellData.isScalar(raw)) raw else 0xFFFD
         if (cp == 10 || (normalizeNewlines && cp == 13)) {
             terminal.dispatchKey(modifiers, VTermKey.ENTER)
             if (normalizeNewlines && cp == 13 && index + 1 < text.length && text[index + 1] == '\n') index++
