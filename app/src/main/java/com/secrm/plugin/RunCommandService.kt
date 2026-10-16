@@ -10,6 +10,7 @@ import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
+import android.provider.Settings
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.secrm.R
@@ -64,6 +65,10 @@ class RunCommandService : Service() {
         val liveId = if (setting.live) UUID.randomUUID().toString() else null
         val live = liveId?.let { id -> LiveOutput().also { LiveCommands.add(id, it) } }
         startForeground(NOTIF_ID, notification(setting, liveId))
+        // Over other apps when allowed; otherwise the notification opens it.
+        if (liveId != null && Settings.canDrawOverlays(this)) {
+            startActivity(LiveTerminalActivity.intent(this, liveId, setting.connection, overlay = true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        }
         scope.launch {
             try {
                 val (code, vars) = execute(setting, live)
