@@ -8,6 +8,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -15,23 +16,23 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Edit
-import androidx.compose.material.icons.rounded.Delete
-import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.secrm.SecureRemoteApp
-import com.secrm.core.ssh.SftpClient
 import com.secrm.core.ssh.SftpEntry
 import com.secrm.core.ssh.SshState
 import com.secrm.design.SecrmIcons
@@ -61,7 +62,7 @@ fun SftpScreen(app: SecureRemoteApp, onOpenHosts: () -> Unit, onOpenTerminal: (S
 private sealed interface Dialog {
     data object NewFolder : Dialog
     data class Rename(val e: SftpEntry) : Dialog
-    data class Delete(val e: SftpEntry) : Dialog
+    data class Delete(val items: List<SftpEntry>) : Dialog
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -72,7 +73,8 @@ private fun FilesContent(controller: SftpController, target: String, onOpenTermi
     val snackbar = remember { SnackbarHostState() }
     var sheet by remember { mutableStateOf<SftpEntry?>(null) }
     var dialog by remember { mutableStateOf<Dialog?>(null) }
-    var downloading by remember { mutableStateOf<SftpEntry?>(null) }
+    var downloading by remember { mutableStateOf<List<SftpEntry>>(emptyList()) }
+    var uploadMenu by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         controller.messages.collect { m ->
@@ -81,32 +83,78 @@ private fun FilesContent(controller: SftpController, target: String, onOpenTermi
         }
     }
     val path = ui.path
+    val selecting = ui.selected.isNotEmpty()
+    val picked = ui.entries.filter { it.path in ui.selected }
+    val busy = ui.transfer != null || ui.working != null
     BackHandler(enabled = path != null && path != "/") { controller.up() }
+    BackHandler(enabled = selecting) { controller.clearSelection() }
 
-    val pickDownload = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
-        val e = downloading
-        if (uri != null && e != null) controller.download(e, uri)
+    val pickSave = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
+        val items = downloading
+        if (uri != null && items.size == 1) controller.download(items[0], uri)
+    }
+    val pickFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null && downloading.isNotEmpty()) controller.downloadInto(downloading, uri)
     }
     val pickUpload = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (uris.isNotEmpty()) controller.upload(uris)
     }
-    val busy = ui.transfer != null || ui.working != null
+    val pickUploadFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) controller.uploadFolder(uri)
+    }
+
+    // One file saves straight to a chosen name; several files or any folder go into a chosen folder.
+    fun download(items: List<SftpEntry>) {
+        downloading = items
+        controller.clearSelection()
+        val single = items.singleOrNull()
+        if (single != null && !single.isDir) pickSave.launch(single.name) else pickFolder.launch(null)
+    }
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text("Files", style = MaterialTheme.typography.titleLarge)
-                        Text(target, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                },
-                actions = {
-                    IconButton({ pickUpload.launch(arrayOf("*/*")) }, enabled = path != null && !busy) { Icon(SecrmIcons.Upload, "Upload files") }
-                    IconButton({ dialog = Dialog.NewFolder }, enabled = path != null && !busy) { Icon(SecrmIcons.NewFolder, "New folder") }
-                    IconButton({ path?.let(onOpenTerminal) }, enabled = path != null) { Icon(SecrmIcons.Terminal, "Open this folder in the terminal") }
-                },
-            )
+            if (selecting) {
+                TopAppBar(
+                    navigationIcon = { IconButton({ controller.clearSelection() }) { Icon(SecrmIcons.Close, "Clear selection") } },
+                    title = { Text("${picked.size} selected", style = MaterialTheme.typography.titleLarge) },
+                    actions = { TextButton({ controller.selectAll() }) { Text("All") } },
+                )
+            } else {
+                TopAppBar(
+                    title = {
+                        Column {
+                            Text("Files", style = MaterialTheme.typography.titleLarge)
+                            Text(target, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                    },
+                    actions = {
+                        Box {
+                            IconButton({ uploadMenu = true }, enabled = path != null && !busy) { Icon(SecrmIcons.Upload, "Upload") }
+                            DropdownMenu(expanded = uploadMenu, onDismissRequest = { uploadMenu = false }) {
+                                DropdownMenuItem(text = { Text("Files") }, onClick = { uploadMenu = false; pickUpload.launch(arrayOf("*/*")) })
+                                DropdownMenuItem(text = { Text("Folder") }, onClick = { uploadMenu = false; pickUploadFolder.launch(null) })
+                            }
+                        }
+                        IconButton({ dialog = Dialog.NewFolder }, enabled = path != null && !busy) { Icon(SecrmIcons.NewFolder, "New folder") }
+                        IconButton({ path?.let(onOpenTerminal) }, enabled = path != null) { Icon(SecrmIcons.Terminal, "Open this folder in the terminal") }
+                    },
+                )
+            }
+        },
+        bottomBar = {
+            if (selecting) {
+                SelectionBar(
+                    enabled = !busy,
+                    onCopy = { controller.copy(picked, cut = false) },
+                    onCut = { controller.copy(picked, cut = true) },
+                    onDownload = { download(picked) },
+                    onDelete = { dialog = Dialog.Delete(picked) },
+                )
+            } else {
+                ui.clip?.let { clip ->
+                    PasteBar(clip, enabled = path != null && !busy, onCancel = controller::clearClip, onPaste = controller::paste)
+                }
+            }
         },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
@@ -141,7 +189,18 @@ private fun FilesContent(controller: SftpController, target: String, onOpenTermi
                                     )
                                 }
                                 items(ui.entries, key = { it.path }) { e ->
-                                    EntryRow(e, onClick = { if (e.isDir) controller.open(e.path) else sheet = e }, onMore = { sheet = e })
+                                    EntryRow(
+                                        e,
+                                        selected = e.path in ui.selected,
+                                        onClick = {
+                                            when {
+                                                selecting -> controller.toggle(e)
+                                                e.isDir -> controller.open(e.path)
+                                                else -> sheet = e
+                                            }
+                                        },
+                                        onLongClick = { controller.toggle(e) },
+                                    )
                                 }
                                 if (ui.entries.isEmpty() && !ui.loading) item {
                                     Box(Modifier.fillParentMaxHeight(0.7f)) {
@@ -173,13 +232,16 @@ private fun FilesContent(controller: SftpController, target: String, onOpenTermi
             )
             HorizontalDivider()
             if (e.isDir) SheetAction(SecrmIcons.Terminal, "Open in terminal") { sheet = null; onOpenTerminal(e.path) }
-            else SheetAction(SecrmIcons.Download, "Download", enabled = !busy) { sheet = null; downloading = e; pickDownload.launch(e.name) }
+            SheetAction(SecrmIcons.Download, "Download", enabled = !busy) { sheet = null; download(listOf(e)) }
+            SheetAction(SecrmIcons.Copy, "Copy", enabled = !busy) { sheet = null; controller.copy(listOf(e), cut = false) }
+            SheetAction(SecrmIcons.Cut, "Cut", enabled = !busy) { sheet = null; controller.copy(listOf(e), cut = true) }
             SheetAction(Icons.Rounded.Edit, "Rename", enabled = !busy) { sheet = null; dialog = Dialog.Rename(e) }
-            SheetAction(SecrmIcons.Copy, "Copy path") {
+            SheetAction(SecrmIcons.Check, "Select") { sheet = null; controller.toggle(e) }
+            SheetAction(SecrmIcons.Link, "Copy path") {
                 sheet = null
                 (ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("path", e.path))
             }
-            SheetAction(Icons.Rounded.Delete, "Delete", danger = true, enabled = !busy) { sheet = null; dialog = Dialog.Delete(e) }
+            SheetAction(Icons.Rounded.Delete, "Delete", danger = true, enabled = !busy) { sheet = null; dialog = Dialog.Delete(listOf(e)) }
             Spacer(Modifier.height(Space.lg))
         }
     }
@@ -189,12 +251,61 @@ private fun FilesContent(controller: SftpController, target: String, onOpenTermi
         is Dialog.Rename -> NameDialog("Rename", d.e.name, "Rename", ui.entries.filter { it != d.e }, onDismiss = { dialog = null }) { dialog = null; controller.rename(d.e, it) }
         is Dialog.Delete -> AlertDialog(
             onDismissRequest = { dialog = null },
-            title = { Text("Delete ${d.e.name}?") },
-            text = { Text(if (d.e.isDir && !d.e.isLink) "The folder and everything in it will be permanently deleted." else "This can't be undone.") },
-            confirmButton = { TextButton({ dialog = null; controller.delete(d.e) }) { Text("Delete", color = MaterialTheme.colorScheme.error) } },
+            title = { Text(if (d.items.size == 1) "Delete ${d.items[0].name}?" else "Delete ${d.items.size} items?") },
+            text = { Text(if (d.items.any { it.isDir && !it.isLink }) "Folders and everything in them will be permanently deleted." else "This can't be undone.") },
+            confirmButton = { TextButton({ dialog = null; controller.delete(d.items); controller.clearSelection() }) { Text("Delete", color = MaterialTheme.colorScheme.error) } },
             dismissButton = { TextButton({ dialog = null }) { Text("Cancel") } },
         )
         null -> {}
+    }
+}
+
+@Composable
+private fun SelectionBar(enabled: Boolean, onCopy: () -> Unit, onCut: () -> Unit, onDownload: () -> Unit, onDelete: () -> Unit) {
+    Surface(tonalElevation = 3.dp, color = MaterialTheme.colorScheme.surfaceContainer) {
+        Row(
+            Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = Space.sm, vertical = Space.sm),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+        ) {
+            BarAction(SecrmIcons.Copy, "Copy", enabled, onClick = onCopy)
+            BarAction(SecrmIcons.Cut, "Cut", enabled, onClick = onCut)
+            BarAction(SecrmIcons.Download, "Download", enabled, onClick = onDownload)
+            BarAction(Icons.Rounded.Delete, "Delete", enabled, danger = true, onClick = onDelete)
+        }
+    }
+}
+
+@Composable
+private fun BarAction(icon: ImageVector, label: String, enabled: Boolean, danger: Boolean = false, onClick: () -> Unit) {
+    val color = when {
+        !enabled -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+        danger -> MaterialTheme.colorScheme.error
+        else -> MaterialTheme.colorScheme.onSurface
+    }
+    Column(
+        Modifier.clip(MaterialTheme.shapes.medium).clickable(enabled = enabled, onClick = onClick).padding(horizontal = Space.md, vertical = Space.sm),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Icon(icon, null, tint = color)
+        Text(label, style = MaterialTheme.typography.labelSmall, color = color)
+    }
+}
+
+@Composable
+private fun PasteBar(clip: Clip, enabled: Boolean, onCancel: () -> Unit, onPaste: () -> Unit) {
+    Surface(tonalElevation = 3.dp, color = MaterialTheme.colorScheme.surfaceContainer) {
+        Row(Modifier.fillMaxWidth().navigationBarsPadding().padding(Space.md), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "${clip.entries.size} to ${if (clip.cut) "move" else "copy"} here?",
+                style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f),
+            )
+            TextButton(onCancel) { Text("Clear") }
+            Button(onPaste, enabled = enabled) {
+                Icon(SecrmIcons.Paste, null, Modifier.size(18.dp))
+                Spacer(Modifier.width(Space.xs))
+                Text("Paste")
+            }
+        }
     }
 }
 
@@ -221,14 +332,16 @@ private fun Crumb(onClick: () -> Unit, current: Boolean, content: @Composable ()
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun EntryRow(e: SftpEntry, onClick: () -> Unit, onMore: () -> Unit) {
+private fun EntryRow(e: SftpEntry, selected: Boolean, onClick: () -> Unit, onLongClick: () -> Unit) {
     ListItem(
         headlineContent = { Text(e.name + if (e.isLink) "  →" else "", maxLines = 1, overflow = TextOverflow.Ellipsis) },
         supportingContent = { Text("${e.perms} · ${date(e.mtime)}", style = MaterialTheme.typography.labelSmall) },
         leadingContent = { FileIcon(e) },
         trailingContent = { if (!e.isDir) Text(size(e.size), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) },
-        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-        modifier = Modifier.combinedClickable(onClick = onClick, onLongClick = onMore),
+        colors = ListItemDefaults.colors(
+            containerColor = if (selected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f) else Color.Transparent,
+        ),
+        modifier = Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick),
     )
 }
 

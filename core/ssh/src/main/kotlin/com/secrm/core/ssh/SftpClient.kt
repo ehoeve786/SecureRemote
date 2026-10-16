@@ -71,6 +71,12 @@ class SftpClient(private val ssh: SshClientManager) {
     suspend fun mkdir(path: String) = run { it.mkdir(path) }
     suspend fun rename(from: String, to: String) = run { it.rename(from, to) }
 
+    /** Copies a file or folder on the host itself (SFTP has no copy), so nothing passes through the phone. */
+    suspend fun copy(from: String, to: String) {
+        val r = ssh.execResult("cp -a -- ${quote(from)} ${quote(to)}")
+        if (r.exitCode != 0) error(r.stderr.trim().ifEmpty { "Copy failed" })
+    }
+
     /** Deletes a file, or a folder with everything in it. */
     suspend fun delete(e: SftpEntry) = run { rm(it, e.path, e.isDir && !e.isLink) }
 
@@ -93,5 +99,6 @@ class SftpClient(private val ssh: SshClientManager) {
     companion object {
         fun join(dir: String, name: String) = if (dir.endsWith("/")) dir + name else "$dir/$name"
         fun parent(path: String) = path.trimEnd('/').substringBeforeLast('/', "").ifEmpty { "/" }
+        private fun quote(s: String) = "'" + s.replace("'", "'\\''") + "'"
     }
 }
