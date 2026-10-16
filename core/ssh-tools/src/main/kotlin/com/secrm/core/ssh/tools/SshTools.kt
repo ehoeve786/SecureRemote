@@ -92,18 +92,19 @@ object SshTools {
                             passphrase = null)
                     }
 
-                    val ok = ssh.connectSaved(conn, auth, saved)
-                    if (!ok) return ToolResult.error("connect_failed",
+                    // A separate client, so this neither replaces nor drops the app's live session.
+                    val client = SshClientManager().apply { proxy = ssh.proxy }
+                    if (!client.connectSaved(conn, auth, saved)) return ToolResult.error("connect_failed",
                         "Check host reachability and credentials.",
                         "SSH connect failed to ${conn.host}:${conn.port}")
 
                     return try {
-                        ToolResult.ok(withTimeout(timeout) { ssh.execOnce(cmd) })
+                        ToolResult.ok(withTimeout(timeout) { client.execOnce(cmd) })
                     } catch (t: Throwable) {
                         ToolResult.error("exec_failed", "Retry or shorten command.",
                             t.message ?: "exec failed")
                     } finally {
-                        ssh.disconnect()
+                        client.shutdown()
                     }
                 }
             }
