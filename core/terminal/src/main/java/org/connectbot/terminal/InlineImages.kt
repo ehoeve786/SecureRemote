@@ -13,10 +13,6 @@ package org.connectbot.terminal
 sealed class InlineImages {
     data object Off : InlineImages()
 
-    data class On(
-        val limits: InlineImageLimits = InlineImageLimits(),
-    ) : InlineImages()
-
     /**
      * Inspect bounded image metadata and reserve layout as data arrives.
      * Pixel decoding and display require approval; denial leaves the reserved space.

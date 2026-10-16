@@ -27,7 +27,15 @@ fun KeystoreRecoveryPrompt(app: SecureRemoteApp) {
                     "Reset to continue; you'll need to re-enter them. Until then, nothing new is saved."
             )
         },
-        confirmButton = { TextButton({ app.config.resetStorage(); open = false }) { Text("Reset") } },
+        confirmButton = {
+            TextButton({
+                // Reset ends every grant too: claude.ai connections and the unlocked vault are not kept.
+                app.oauth.revokeAll()
+                app.vault.lock()
+                app.config.resetStorage()
+                open = false
+            }) { Text("Reset") }
+        },
         dismissButton = { TextButton({ open = false }) { Text("Not now") } },
     )
 }
