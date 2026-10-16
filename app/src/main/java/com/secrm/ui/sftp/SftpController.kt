@@ -99,8 +99,15 @@ class SftpController(
         }
     }
 
-    fun mkdir(name: String) = change("Creating folder") { client.mkdir(SftpClient.join(dir(), name)) }
-    fun rename(e: SftpEntry, name: String) = change("Renaming") { client.rename(e.path, SftpClient.join(dir(), name)) }
+    fun mkdir(name: String) = change("Creating folder") { client.mkdir(SftpClient.join(dir(), requireName(name))) }
+    fun rename(e: SftpEntry, name: String) = change("Renaming") { client.rename(e.path, SftpClient.join(dir(), requireName(name))) }
+
+    /** A name is one path component: no separators, NULs, or the special '.' and '..' entries. */
+    private fun requireName(name: String): String {
+        val n = name.trim()
+        require(n.isNotEmpty() && n != "." && n != ".." && '/' !in n && '\u0000' !in n) { "Invalid name" }
+        return n
+    }
     fun delete(items: List<SftpEntry>) = change(if (items.size == 1) "Deleting ${items[0].name}" else "Deleting ${items.size} items") {
         items.forEach { client.delete(it) }
     }
@@ -154,7 +161,8 @@ class SftpController(
                     _state.update { it.copy(transfer = it.transfer?.copy(index = i + 1)) }
                     val name = uniqueName(e.name, taken).also { taken += it }
                     importEntry(source.sftp, e, dir, name)
-                    if (clip.cut) source.sftp.delete(e)
+                    // importEntry returns normally on cancel, so check again before removing the source.
+                    if (clip.cut && !cancelRequested) source.sftp.delete(e)
                 }
             }
             if (!cancelRequested) sessions.setClip(null)

@@ -1206,6 +1206,8 @@ static int on_csi(const char *leader, const long args[], int argcount, const cha
     break;
 
   case 0x62: { // REP - ECMA-48 8.3.103
+    if(!state->combine_valid)
+      break; // nothing printed yet, so there is no glyph to repeat
     const int row_width = THISROWWIDTH(state);
     count = CSI_ARG_COUNT(args[0]);
     col = state->pos.col + count;
@@ -1965,6 +1967,14 @@ static int on_resize(int rows, int cols, void *user)
     UBOUND(state->scrollregion_bottom, state->rows);
   if(state->scrollregion_right > -1)
     UBOUND(state->scrollregion_right, state->cols);
+  if(state->scrollregion_top >= state->rows || (state->scrollregion_bottom > -1 && state->scrollregion_bottom <= state->scrollregion_top)) {
+    state->scrollregion_top    = 0;
+    state->scrollregion_bottom = -1;
+  }
+  if(state->scrollregion_left >= state->cols || (state->scrollregion_right > -1 && state->scrollregion_right <= state->scrollregion_left)) {
+    state->scrollregion_left  = 0;
+    state->scrollregion_right = -1;
+  }
 
   VTermStateFields fields = {
     .pos       = state->pos,
