@@ -250,4 +250,11 @@ class McpServerIntegrationTest {
             }
         }
     }
+
+    @Test fun oversizedOAuthBodyIsRefusedBeforeBeingBuffered() {
+        val big = "x".repeat(200 * 1024)
+        val r = send(remotePort, "POST", "/token", remoteHost,
+            headers = mapOf("Content-Type" to "application/x-www-form-urlencoded"), body = big)
+        assertEquals(413, r.status)
+    }
 }

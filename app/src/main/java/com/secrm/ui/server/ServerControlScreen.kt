@@ -228,6 +228,7 @@ private fun McpSection(app: SecureRemoteApp) {
     val running by McpServerService.running.collectAsState()
     var expanded by remember { mutableStateOf(false) }
     val bearer = app.config.mcpBearerToken.orEmpty()
+    val localToken = app.config.mcpLocalToken.orEmpty()
 
     GlassCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(Space.lg)) {
@@ -291,6 +292,12 @@ private fun McpSection(app: SecureRemoteApp) {
                     "Remote   http://127.0.0.1:7824/mcp   (forward this one)",
                     style = MaterialTheme.mono, color = MaterialTheme.colorScheme.onSurface
                 )
+
+                Spacer(Modifier.height(Space.md))
+                Text("Local token (on-phone callers only)", style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Medium)
+                Text(localToken.ifBlank { "(generated on first start)" },
+                    style = MaterialTheme.mono, color = MaterialTheme.colorScheme.onSurface)
 
                 Spacer(Modifier.height(Space.md))
                 Text("Bearer token", style = MaterialTheme.typography.labelMedium,
