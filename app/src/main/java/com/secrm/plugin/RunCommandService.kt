@@ -12,6 +12,7 @@ import android.os.Bundle
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import com.secrm.R
 import com.secrm.SecureRemoteApp
 import com.secrm.core.ssh.SshAuth
 import com.secrm.core.ssh.SshClientManager
@@ -129,7 +130,7 @@ class RunCommandService : Service() {
         val done = CompletableDeferred<Boolean>()
         UnlockActivity.waiting = done
         nm.notify(UNLOCK_NOTIF_ID, NotificationCompat.Builder(this, UNLOCK_CHANNEL)
-            .setSmallIcon(android.R.drawable.ic_lock_idle_lock)
+            .setSmallIcon(R.drawable.ic_stat_secrm)
             .setContentTitle("Unlock Bitwarden to run the command")
             .setContentText("Tap to unlock with your fingerprint")
             .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -170,7 +171,7 @@ class RunCommandService : Service() {
         }
         val firstLine = s.command.lineSequence().firstOrNull().orEmpty().take(60)
         val builder = NotificationCompat.Builder(this, CHANNEL)
-            .setSmallIcon(android.R.drawable.stat_sys_upload)
+            .setSmallIcon(R.drawable.ic_stat_secrm)
             .setContentTitle("Running on ${s.connection}")
             .setContentText(if (liveId != null) "Tap to watch: $firstLine" else firstLine)
             .setOngoing(true)

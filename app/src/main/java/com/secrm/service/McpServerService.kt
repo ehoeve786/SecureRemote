@@ -6,6 +6,7 @@ import android.content.Intent
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
+import com.secrm.R
 import com.secrm.SecureRemoteApp
 import com.secrm.core.server.http.McpAuth
 import com.secrm.core.server.http.McpHttpServer
@@ -43,7 +44,7 @@ class McpServerService : Service() {
             )
         }
         startForeground(NOTIF_ID, NotificationCompat.Builder(this, CHANNEL)
-            .setSmallIcon(android.R.drawable.stat_sys_upload)
+            .setSmallIcon(R.drawable.ic_stat_secrm)
             .setContentTitle("Secure Remote Manager")
             .setContentText("MCP server and private network running")
             .setOngoing(true).build())
