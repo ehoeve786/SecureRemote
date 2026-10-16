@@ -1560,8 +1560,13 @@ internal fun TerminalWithAccessibility(
                                     )
 
                                     if (hyperlinkUrl != null) {
-                                        // User tapped on a hyperlink
-                                        currentOnHyperlinkClick(hyperlinkUrl)
+                                        // User tapped on a hyperlink. Output is remote-controlled, so only
+                                        // web links reach the callback (no file:, intent:, or custom schemes).
+                                        if (hyperlinkUrl.startsWith("https://", ignoreCase = true) ||
+                                            hyperlinkUrl.startsWith("http://", ignoreCase = true)
+                                        ) {
+                                            currentOnHyperlinkClick(hyperlinkUrl)
+                                        }
                                     } else {
                                         // Request focus when terminal is tapped to show keyboard
                                         if (currentKeyboardEnabled) {

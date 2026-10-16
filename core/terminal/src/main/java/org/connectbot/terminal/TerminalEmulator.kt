@@ -494,7 +494,7 @@ internal class TerminalEmulatorImpl(
 
     // Scrollback buffer
     private val scrollback = ArrayDeque<TerminalLine>()
-    private val maxScrollbackLines = 10_000
+    private val maxScrollbackLines = InlineImageStore.MAX_HISTORY_LINES
 
     // Cached immutable copy of scrollback - only recreate when scrollback changes
     private var scrollbackSnapshot: List<TerminalLine> = emptyList()

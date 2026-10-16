@@ -45,7 +45,7 @@ internal class InlineImageProtocol(
                 action = action,
                 imageId = identifier(options, "i"),
                 imageNumber = identifier(options, "I"),
-                name = if (iterm) options["name"]?.let { runCatching { Base64.decode(it, Base64.DEFAULT).toString(Charsets.UTF_8) }.getOrNull() } else null,
+                name = if (iterm) options["name"]?.let { runCatching { displayName(Base64.decode(it, Base64.DEFAULT).toString(Charsets.UTF_8)) }.getOrNull() } else null,
                 declaredSizeBytes = options["size"]?.toLongOrNull(),
                 pixelWidth = options["s"]?.toIntOrNull(),
                 pixelHeight = options["v"]?.toIntOrNull(),
@@ -651,7 +651,20 @@ internal class InlineImageProtocol(
 
     private fun rgba(value: Long): Int = ((value and 255) shl 24 or (value ushr 8)).toInt()
 
+    /** Strips control and bidi/format characters and caps length, since the consent prompt shows this text. */
+    private fun displayName(raw: String): String {
+        val out = StringBuilder()
+        raw.codePoints().forEach { cp ->
+            val type = Character.getType(cp)
+            val hidden = type == Character.CONTROL.toInt() || type == Character.FORMAT.toInt() ||
+                type == Character.UNASSIGNED.toInt() || type == Character.SURROGATE.toInt()
+            if (!hidden && out.length < MAX_NAME_CHARS) out.appendCodePoint(cp)
+        }
+        return out.toString()
+    }
+
     private companion object {
         const val TAG = "InlineImageProtocol"
+        const val MAX_NAME_CHARS = 256
     }
 }
