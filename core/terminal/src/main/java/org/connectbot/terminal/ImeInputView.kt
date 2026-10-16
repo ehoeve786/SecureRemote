@@ -183,6 +183,8 @@ internal class ImeInputView(
             // a real Editable so getExtractedText() returns non-null (required by Gboard
             // for voice input).
             outAttrs.inputType = EditorInfo.TYPE_CLASS_TEXT
+            // Keep passphrases and passwords typed here out of the IME's learned dictionary.
+            outAttrs.imeOptions = outAttrs.imeOptions or EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
             if (shortcutInputMode == ImeShortcutInputMode.FORCE_ASCII) {
                 outAttrs.imeOptions = outAttrs.imeOptions or EditorInfo.IME_FLAG_FORCE_ASCII
             }
