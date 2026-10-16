@@ -210,7 +210,13 @@ class SshClientManager {
         }
     }
 
-    suspend fun execOnce(command: String): String = withContext(Dispatchers.IO) {
+    suspend fun execOnce(command: String): String = execResult(command).let { r ->
+        r.stdout + if (r.stderr.isNotBlank()) "\n[stderr]\n${r.stderr}" else ""
+    }
+
+    data class ExecResult(val stdout: String, val stderr: String, val exitCode: Int)
+
+    suspend fun execResult(command: String): ExecResult = withContext(Dispatchers.IO) {
         val s = session ?: error("No active SSH session")
         val ch = s.openChannel("exec") as com.jcraft.jsch.ChannelExec
         val out = ByteArrayOutputStream()
@@ -229,11 +235,7 @@ class SshClientManager {
                 input.copyTo(out)
             } finally { watcher.cancel(); ch.disconnect() }
         }
-        buildString {
-            append(out.toString(Charsets.UTF_8.name()))
-            val e = err.toString(Charsets.UTF_8.name())
-            if (e.isNotBlank()) { append("\n[stderr]\n"); append(e) }
-        }
+        ExecResult(out.toString(Charsets.UTF_8.name()), err.toString(Charsets.UTF_8.name()), ch.exitStatus)
     }
 
     suspend fun disconnect() = withContext(Dispatchers.IO) {
