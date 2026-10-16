@@ -312,7 +312,8 @@ private fun ConnectionFormSheet(
     val scope = rememberCoroutineScope()
     val activity = LocalContext.current as FragmentActivity
     fun pick(m: AuthMethod) { if (m != authMethod) keyId = null; authMethod = m }
-    val valid = name.isNotBlank() && host.isNotBlank() && user.isNotBlank() &&
+    val portNum = if (port.isEmpty()) 22 else port.toIntOrNull()?.takeIf { it in 1..65535 }
+    val valid = portNum != null && name.isNotBlank() && host.isNotBlank() && user.isNotBlank() &&
         when (authMethod) {
             AuthMethod.PASSWORD -> password.isNotBlank()
             AuthMethod.SAVED_KEY, AuthMethod.AGENT -> keyId != null
@@ -343,6 +344,8 @@ private fun ConnectionFormSheet(
                 modifier = Modifier.fillMaxWidth())
             OutlinedTextField(port, { port = it.filter(Char::isDigit) },
                 label = { Text("Port") }, singleLine = true,
+                isError = portNum == null,
+                supportingText = { if (portNum == null) Text("Port must be 1–65535") },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 modifier = Modifier.fillMaxWidth())
             OutlinedTextField(user, { user = it },
@@ -445,7 +448,7 @@ private fun ConnectionFormSheet(
                     onSave(SavedConnection(
                         name = name.trim(),
                         host = host.trim(),
-                        port = port.toIntOrNull() ?: 22,
+                        port = portNum ?: 22,
                         user = user.trim(),
                         authMethod = authMethod,
                         password = if (authMethod == AuthMethod.PASSWORD) password else "",
