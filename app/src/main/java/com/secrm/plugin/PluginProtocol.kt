@@ -31,6 +31,21 @@ object PluginProtocol {
 
     private const val EXTRAS = "net.dinglisch.android.tasker.extras."
     const val EXTRA_REQUESTED_TIMEOUT = EXTRAS + "REQUESTED_TIMEOUT"
+    private const val EXTRA_HOST_CAPABILITIES = EXTRAS + "HOST_CAPABILITIES"
+    private const val CAPABILITY_RELEVANT_VARIABLES = 16
+    private const val BUNDLE_RELEVANT_VARIABLES = "net.dinglisch.android.tasker.RELEVANT_VARIABLES"
+
+    /** Whether the host asked for the variable list, shown as its "Variables" dialog. */
+    fun hostSupportsRelevantVariables(hostExtras: Bundle?): Boolean =
+        ((hostExtras?.getInt(EXTRA_HOST_CAPABILITIES, 0) ?: 0) and CAPABILITY_RELEVANT_VARIABLES) != 0
+
+    /**
+     * Declares the output variables for the host's dialog. Each entry is "name", a label line and a
+     * description line, which may use simple HTML.
+     */
+    fun addRelevantVariables(intent: Intent, variables: Array<String>) {
+        intent.putExtra(BUNDLE_RELEVANT_VARIABLES, variables)
+    }
     private const val EXTRA_COMPLETION_INTENT = EXTRAS + "COMPLETION_INTENT"
     private const val EXTRA_RESULT_CODE = EXTRAS + "RESULT_CODE"
     private const val EXTRA_VARIABLES = EXTRAS + "VARIABLES"

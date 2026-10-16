@@ -37,7 +37,15 @@ class EditSettingActivity : ComponentActivity() {
     private fun resultIntent(s: RunSetting): Intent = Intent().apply {
         putExtra(PluginProtocol.EXTRA_BUNDLE, s.toBundle())
         putExtra(PluginProtocol.EXTRA_BLURB, s.blurb())
-        if (s.block) putExtra(PluginProtocol.EXTRA_REQUESTED_TIMEOUT, PluginProtocol.REQUESTED_TIMEOUT_NEVER)
+        if (s.block) {
+            putExtra(PluginProtocol.EXTRA_REQUESTED_TIMEOUT, PluginProtocol.REQUESTED_TIMEOUT_NEVER)
+            if (PluginProtocol.hostSupportsRelevantVariables(intent.extras)) PluginProtocol.addRelevantVariables(this, arrayOf(
+                "%stdout\nStandard Output\nThe <b>stdout</b> of the command.",
+                "%stderr\nStandard Error\nThe <b>stderr</b> of the command.",
+                "%result\nExit Code\nThe <b>exit code</b> of the command. 0 often means success.",
+                "%errmsg\nError Message\nWhy the command could not run, if it failed.",
+            ))
+        }
     }
 }
 
