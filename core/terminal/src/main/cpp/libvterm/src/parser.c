@@ -231,8 +231,11 @@ size_t vterm_input_write(VTerm *vt, const char *bytes, size_t len)
       if(c >= '0' && c <= '9') {
         if(vt->parser.v.csi.args[vt->parser.v.csi.argi] == CSI_ARG_MISSING)
           vt->parser.v.csi.args[vt->parser.v.csi.argi] = 0;
-        vt->parser.v.csi.args[vt->parser.v.csi.argi] *= 10;
-        vt->parser.v.csi.args[vt->parser.v.csi.argi] += c - '0';
+        // Stop growing a value that is already past any meaningful parameter, so it cannot overflow.
+        if(CSI_ARG(vt->parser.v.csi.args[vt->parser.v.csi.argi]) < 100000000L) {
+          vt->parser.v.csi.args[vt->parser.v.csi.argi] *= 10;
+          vt->parser.v.csi.args[vt->parser.v.csi.argi] += c - '0';
+        }
         break;
       }
       if(c == ':') {
@@ -240,8 +243,11 @@ size_t vterm_input_write(VTerm *vt, const char *bytes, size_t len)
         c = ';';
       }
       if(c == ';') {
-        vt->parser.v.csi.argi++;
-        vt->parser.v.csi.args[vt->parser.v.csi.argi] = CSI_ARG_MISSING;
+        // The args array holds CSI_ARGS_MAX values. Parameters past that are dropped.
+        if(vt->parser.v.csi.argi < CSI_ARGS_MAX - 1) {
+          vt->parser.v.csi.argi++;
+          vt->parser.v.csi.args[vt->parser.v.csi.argi] = CSI_ARG_MISSING;
+        }
         break;
       }
 
@@ -272,9 +278,10 @@ size_t vterm_input_write(VTerm *vt, const char *bytes, size_t len)
       if(c >= '0' && c <= '9') {
         if(vt->parser.v.osc.command == -1)
           vt->parser.v.osc.command = 0;
-        else
+        else if(vt->parser.v.osc.command < 100000000)
           vt->parser.v.osc.command *= 10;
-        vt->parser.v.osc.command += c - '0';
+        if(vt->parser.v.osc.command >= 0 && vt->parser.v.osc.command < 100000000)
+          vt->parser.v.osc.command += c - '0';
         break;
       }
       if(c == ';') {

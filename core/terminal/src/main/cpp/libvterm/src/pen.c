@@ -404,7 +404,8 @@ INTERNAL void vterm_state_setpen(VTermState *state, const long args[], int argco
       break;
 
     case 38: // Foreground colour alternative palette
-      if(argcount - argi < 1)
+      // The palette index is args[argi+1], so it needs two values, not one.
+      if(argcount - argi < 2)
         return;
       argi += 1 + lookup_colour(state, CSI_ARG(args[argi+1]), args+argi+2, argcount-argi-2, &state->pen.fg);
       setpenattr_col(state, VTERM_ATTR_FOREGROUND, state->pen.fg);
