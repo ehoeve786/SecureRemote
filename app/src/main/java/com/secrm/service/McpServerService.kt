@@ -10,9 +10,15 @@ import com.secrm.R
 import com.secrm.SecureRemoteApp
 import com.secrm.core.server.http.McpAuth
 import com.secrm.core.server.http.McpHttpServer
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 class McpServerService : Service() {
     companion object {
+        private val _running = MutableStateFlow(false)
+        /** Whether the server is up; the settings screen shows this. */
+        val running: StateFlow<Boolean> = _running.asStateFlow()
         private const val CHANNEL = "secrm_mcp"
         private const val NOTIF_ID = 7301
         private const val START = "start"
@@ -62,9 +68,10 @@ class McpServerService : Service() {
                 setOf("*.ts.net")) { it == bearer || app.oauth.isValid(it) },
             oauth = app.oauth
         ).also { it.start() }
+        _running.value = true
     }
 
-    private fun stopServer() { server?.stop(); server = null }
+    private fun stopServer() { server?.stop(); server = null; _running.value = false }
     override fun onDestroy() { stopServer(); super.onDestroy() }
     override fun onBind(i: Intent?): IBinder? = null
 }

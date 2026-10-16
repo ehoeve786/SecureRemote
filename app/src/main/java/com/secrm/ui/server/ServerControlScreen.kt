@@ -225,7 +225,7 @@ private fun OnOff(st: Tunnel.State, on: () -> Unit, off: () -> Unit) =
 @Composable
 private fun McpSection(app: SecureRemoteApp) {
     val ctx = LocalContext.current
-    var running by remember { mutableStateOf(false) }
+    val running by McpServerService.running.collectAsState()
     var expanded by remember { mutableStateOf(false) }
     val bearer = app.config.mcpBearerToken.orEmpty()
 
@@ -244,11 +244,11 @@ private fun McpSection(app: SecureRemoteApp) {
             Spacer(Modifier.height(Space.md))
             if (running) {
                 PillButton("Stop server", PillStyle.Danger, Modifier.fillMaxWidth()) {
-                    McpServerService.stop(ctx); running = false
+                    McpServerService.stop(ctx)
                 }
             } else {
                 PillButton("Start server", PillStyle.Primary, Modifier.fillMaxWidth()) {
-                    McpServerService.start(ctx); running = true
+                    McpServerService.start(ctx)
                 }
             }
 
