@@ -5,6 +5,7 @@ import android.net.Uri
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import androidx.documentfile.provider.DocumentFile
+import com.secrm.HostSessions
 import com.secrm.core.ssh.SftpClient
 import com.secrm.core.ssh.SftpEntry
 import com.secrm.core.ssh.SshClientManager
@@ -24,8 +25,8 @@ import kotlinx.coroutines.withContext
 
 data class Transfer(val upload: Boolean, val name: String, val done: Long, val total: Long, val index: Int, val count: Int)
 
-/** Items copied or cut, waiting to be pasted into a folder. */
-data class Clip(val entries: List<SftpEntry>, val cut: Boolean)
+/** Items copied or cut on [host], waiting to be pasted into a folder on any connected host. */
+data class Clip(val host: String, val entries: List<SftpEntry>, val cut: Boolean)
 
 data class SftpUiState(
     val path: String? = null,
@@ -39,20 +40,26 @@ data class SftpUiState(
     val transfer: Transfer? = null,
     /** Paths picked in multi-select; empty when not selecting. */
     val selected: Set<String> = emptySet(),
-    val clip: Clip? = null,
 )
 
 /** A one-off message for the snackbar, with an optional retry. */
 data class SftpMessage(val text: String, val retry: (() -> Unit)? = null)
 
 /**
- * Holds the file browser's state for the SSH session in [ssh]: screens render [state] and call the
- * methods below (unidirectional flow). It lives in the app, so path and listing survive tab changes;
+ * Holds the file browser's state for [host] (the SSH session in [ssh]): screens render [state] and call
+ * the methods below (unidirectional flow). It lives in the app, so path and listing survive tab changes;
  * [sync] resets it when a new SSH session replaces the one it was browsing.
  */
-class SftpController(private val app: Application, private val ssh: SshClientManager) {
+class SftpController(
+    private val app: Application,
+    private val ssh: SshClientManager,
+    private val host: String,
+    private val sessions: HostSessions,
+) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var client = SftpClient(ssh)
+    /** The SFTP client, for copying between hosts. */
+    internal val sftp: SftpClient get() = client
     private var generation = -1
     private var listing: Job? = null
     private var home: String? = null
@@ -109,16 +116,21 @@ class SftpController(private val app: Application, private val ssh: SshClientMan
     /** Copies (or cuts) [items]; paste them into any folder with [paste]. */
     fun copy(items: List<SftpEntry>, cut: Boolean) {
         if (items.isEmpty()) return
-        _state.update { it.copy(clip = Clip(items, cut), selected = emptySet()) }
+        sessions.setClip(Clip(host, items, cut))
+        _state.update { it.copy(selected = emptySet()) }
         _messages.tryEmit(SftpMessage("${items.size} ${if (cut) "cut" else "copied"}. Open the folder and tap Paste."))
     }
 
-    fun clearClip() = _state.update { it.copy(clip = null) }
+    fun clearClip() = sessions.setClip(null)
 
-    /** Pastes the clipboard into the open folder: a move for cut, a copy on the host for copied items. */
+    /**
+     * Pastes the clipboard into the open folder. On this host: a move for cut (a rename), a copy on the
+     * host for copied items. From another host: the files are streamed across the phone.
+     */
     fun paste() {
-        val clip = _state.value.clip ?: return
+        val clip = sessions.clip.value ?: return
         val dir = _state.value.path ?: return
+        if (clip.host != host) return pasteFrom(clip, dir)
         change(if (clip.cut) "Moving" else "Copying") {
             val taken = _state.value.entries.mapTo(HashSet()) { it.name }
             for (e in clip.entries) {
@@ -127,7 +139,43 @@ class SftpController(private val app: Application, private val ssh: SshClientMan
                 val to = SftpClient.join(dir, name)
                 if (clip.cut) client.rename(e.path, to) else client.copy(e.path, to)
             }
-            _state.update { it.copy(clip = null) }
+            sessions.setClip(null)
+        }
+    }
+
+    private fun pasteFrom(clip: Clip, dir: String) {
+        val source = sessions.find(clip.host)?.files
+            ?: return fail(IllegalStateException("${clip.host} is no longer connected"))
+        transfer(Transfer(true, "", 0, 0, 1, clip.entries.size)) { _ ->
+            withContext(Dispatchers.IO) {
+                val taken = _state.value.entries.mapTo(HashSet()) { it.name }
+                for ((i, e) in clip.entries.withIndex()) {
+                    if (cancelRequested) break
+                    _state.update { it.copy(transfer = it.transfer?.copy(index = i + 1)) }
+                    val name = uniqueName(e.name, taken).also { taken += it }
+                    importEntry(source.sftp, e, dir, name)
+                    if (clip.cut) source.sftp.delete(e)
+                }
+            }
+            if (!cancelRequested) sessions.setClip(null)
+            source.refresh()
+        }
+    }
+
+    /** Copies [e] from [src] into [dir] as [name], folders recursively, via a temporary file on the phone. */
+    private suspend fun importEntry(src: SftpClient, e: SftpEntry, dir: String, name: String) {
+        val to = SftpClient.join(dir, name)
+        if (e.isDir) {
+            runCatching { client.mkdir(to) } // already there is fine
+            for (c in src.list(e.path)) { if (cancelRequested) return; importEntry(src, c, to, c.name) }
+        } else {
+            _state.update { it.copy(transfer = it.transfer?.copy(name = e.name, done = 0, total = e.size)) }
+            val tmp = java.io.File.createTempFile("xfer", null, app.cacheDir)
+            try {
+                tmp.outputStream().use { src.download(e.path, it, { cancelRequested }) { n -> progress(n) } }
+                _state.update { it.copy(transfer = it.transfer?.copy(done = 0)) }
+                tmp.inputStream().use { client.upload(it, to, { cancelRequested }) { n -> progress(n) } }
+            } finally { tmp.delete() }
         }
     }
 

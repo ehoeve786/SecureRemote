@@ -25,7 +25,6 @@ class SecureRemoteApp : Application() {
     lateinit var config: EncryptedConfigStore; private set
     lateinit var tailscale: TailscaleTunnel; private set
     lateinit var wireguard: WireGuardTunnel; private set
-    lateinit var ssh: SshClientManager; private set
     lateinit var audit: McpAuditLog; private set
     lateinit var dispatcher: CallDispatcher; private set
     lateinit var connections: ConnectionRepository; private set
@@ -33,23 +32,19 @@ class SecureRemoteApp : Application() {
     lateinit var vault: BitwardenVault; private set
     lateinit var oauth: com.secrm.core.server.http.McpOAuth; private set
     lateinit var ui: com.secrm.data.UiPrefs; private set
-    /** File browser state for the connected host; survives tab switches. */
-    val files by lazy { com.secrm.ui.sftp.SftpController(this, ssh) }
+    /** The connected hosts, each with its own shell and file browser. */
+    val sessions by lazy { HostSessions(this) }
 
-    private var bridge: com.secrm.core.terminal.TerminalBridge? = null
-    private var bridgeGeneration = -1
-
-    /**
-     * The terminal for the live SSH session, or null when not connected. One per session, so the
-     * shell and its scrollback survive switching tabs; a new connection gets a new one.
-     */
-    @Synchronized
-    fun terminal(): com.secrm.core.terminal.TerminalBridge? {
-        if (ssh.state.value !is com.secrm.core.ssh.SshState.Connected) return null
-        if (bridge == null || bridgeGeneration != ssh.generation) {
-            bridge = com.secrm.core.terminal.TerminalBridge(ssh); bridgeGeneration = ssh.generation
+    /** A new SSH client that goes through the private network when a connection asks for it. */
+    fun newClient(): SshClientManager = SshClientManager().apply {
+        // A connection routed through a private network starts it if needed and waits (up to 30 s) for it.
+        proxy = { via ->
+            val (t, name) = if (via == "wireguard") wireguard to "WireGuard" else tailscale to "Tailscale"
+            t.start() // no-op if already running
+            runBlocking { withTimeoutOrNull(30_000) { t.state.first { it is Tunnel.State.Up } } }
+                ?: error("$name isn't connected. Check Settings → Private network.")
+            com.secrm.data.TunnelProxy { host, port -> t.dial(host, port, 30_000) }
         }
-        return bridge
     }
 
     override fun onCreate() {
@@ -60,15 +55,6 @@ class SecureRemoteApp : Application() {
         tailscale = TailscaleTunnel(this, scope, targetPort = 7824).apply { resume() }
         wireguard = WireGuardTunnel(this, scope, { config.get("wg.config") },
             { it?.let { c -> config.put("wg.config", c) } ?: config.remove("wg.config") }).apply { resume() }
-        ssh = SshClientManager()
-        // A connection routed through a private network starts it if needed and waits (up to 30 s) for it.
-        ssh.proxy = { via ->
-            val (t, name) = if (via == "wireguard") wireguard to "WireGuard" else tailscale to "Tailscale"
-            t.start() // no-op if already running
-            runBlocking { withTimeoutOrNull(30_000) { t.state.first { it is Tunnel.State.Up } } }
-                ?: error("$name isn't connected. Check Settings → Private network.")
-            com.secrm.data.TunnelProxy { host, port -> t.dial(host, port, 30_000) }
-        }
         audit = McpAuditLog(this)
         keys = KeyRepository(config)
         vault = BitwardenVault(config)
@@ -87,6 +73,6 @@ class SecureRemoteApp : Application() {
                 ))
             }
         })
-        SshTools.register(dispatcher, connections, ssh)
+        SshTools.register(dispatcher, connections, newClient())
     }
 }

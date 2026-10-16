@@ -34,9 +34,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.secrm.SecureRemoteApp
 import com.secrm.core.ssh.SftpEntry
-import com.secrm.core.ssh.SshState
 import com.secrm.design.SecrmIcons
 import com.secrm.design.Space
+import com.secrm.ui.HostPager
 import com.secrm.ui.common.StateMessage
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -45,8 +45,9 @@ import java.util.Locale
 /** Files tab: the connected host's file system over SFTP. */
 @Composable
 fun SftpScreen(app: SecureRemoteApp, onOpenHosts: () -> Unit, onOpenTerminal: (String) -> Unit) {
-    val sshState by app.ssh.state.collectAsState()
-    if (sshState !is SshState.Connected) {
+    val hosts by app.sessions.connected.collectAsState()
+    val clip by app.sessions.clip.collectAsState()
+    if (hosts.isEmpty()) {
         StateMessage(
             SecrmIcons.Folder, "No active connection",
             "Connect to a host to browse and transfer its files.",
@@ -54,9 +55,12 @@ fun SftpScreen(app: SecureRemoteApp, onOpenHosts: () -> Unit, onOpenTerminal: (S
         )
         return
     }
-    val generation = app.ssh.generation
-    LaunchedEffect(generation) { app.files.sync() }
-    FilesContent(app.files, app.ssh.target.orEmpty(), onOpenTerminal)
+    // One file browser per connected host; swiping between them switches host.
+    HostPager(app, hosts) { host ->
+        val generation = host.ssh.generation
+        LaunchedEffect(host.name, generation) { host.files.sync() }
+        FilesContent(host.files, host.target, clip, onOpenTerminal)
+    }
 }
 
 private sealed interface Dialog {
@@ -67,7 +71,7 @@ private sealed interface Dialog {
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
-private fun FilesContent(controller: SftpController, target: String, onOpenTerminal: (String) -> Unit) {
+private fun FilesContent(controller: SftpController, target: String, clip: Clip?, onOpenTerminal: (String) -> Unit) {
     val ui by controller.state.collectAsState()
     val ctx = LocalContext.current
     val snackbar = remember { SnackbarHostState() }
@@ -151,8 +155,8 @@ private fun FilesContent(controller: SftpController, target: String, onOpenTermi
                     onDelete = { dialog = Dialog.Delete(picked) },
                 )
             } else {
-                ui.clip?.let { clip ->
-                    PasteBar(clip, enabled = path != null && !busy, onCancel = controller::clearClip, onPaste = controller::paste)
+                clip?.let { c ->
+                    PasteBar(c, enabled = path != null && !busy, onCancel = controller::clearClip, onPaste = controller::paste)
                 }
             }
         },
@@ -296,7 +300,7 @@ private fun PasteBar(clip: Clip, enabled: Boolean, onCancel: () -> Unit, onPaste
     Surface(tonalElevation = 3.dp, color = MaterialTheme.colorScheme.surfaceContainer) {
         Row(Modifier.fillMaxWidth().navigationBarsPadding().padding(Space.md), verticalAlignment = Alignment.CenterVertically) {
             Text(
-                "${clip.entries.size} to ${if (clip.cut) "move" else "copy"} here?",
+                "${clip.entries.size} from ${clip.host} to ${if (clip.cut) "move" else "copy"} here?",
                 style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f),
             )
             TextButton(onCancel) { Text("Clear") }
