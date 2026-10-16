@@ -347,7 +347,6 @@ internal class TerminalEmulatorImpl(
 
     private fun limits(policy: InlineImages): InlineImageLimits = when (policy) {
         InlineImages.Off -> InlineImageLimits()
-        is InlineImages.On -> policy.limits
         is InlineImages.Ask -> policy.limits
     }
 
@@ -604,9 +603,11 @@ internal class TerminalEmulatorImpl(
     }
 
     override fun pasteText(text: String) {
+        // ESC ends a bracketed paste when it is followed by [201~, so pasted text must not carry one.
+        val safe = text.filterNot { it == '\u001b' || it == '\u009b' }
         commands.execute {
             batchOutput {
-                terminalNative.pasteText(text.toByteArray(Charsets.UTF_8))
+                terminalNative.pasteText(safe.toByteArray(Charsets.UTF_8))
             }
         }
     }
