@@ -60,10 +60,22 @@ class SftpClient(private val ssh: SshClientManager) {
 
     /** [shouldCancel] is polled as data moves; when it turns true the transfer stops and throws. */
     suspend fun download(path: String, out: OutputStream, shouldCancel: () -> Boolean = { false }, onProgress: (Long) -> Unit = {}) =
-        run { it.get(path, out, monitor(shouldCancel, onProgress)) }
+        run {
+            it.get(path, out, monitor(shouldCancel, onProgress))
+            throwIfCancelled(shouldCancel)
+        }
 
     suspend fun upload(input: InputStream, path: String, shouldCancel: () -> Boolean = { false }, onProgress: (Long) -> Unit = {}) =
-        run { it.put(input, path, monitor(shouldCancel, onProgress), ChannelSftp.OVERWRITE) }
+        run {
+            it.put(input, path, monitor(shouldCancel, onProgress), ChannelSftp.OVERWRITE)
+            throwIfCancelled(shouldCancel)
+        }
+
+    // The progress monitor only asks the library to stop; whether that surfaces as an error depends on the
+    // library version. Checking here makes a cancelled transfer always fail, so callers clean up.
+    private fun throwIfCancelled(shouldCancel: () -> Boolean) {
+        if (shouldCancel()) throw java.io.IOException("Transfer cancelled")
+    }
 
     /** Removes a file, ignoring failure (used to clean up a cancelled upload). */
     suspend fun removeQuietly(path: String) { runCatching { run { it.rm(path) } } }
