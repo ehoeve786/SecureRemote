@@ -5,6 +5,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -185,10 +186,15 @@ fun DashboardScreen(
             initial = editing,
             onDismiss = { showForm = false; editing = null },
             onSave = { conn ->
-                app.connections.upsert(conn)
-                connections = app.connections.list()
-                showForm = false
-                editing = null
+                // A corrupt store throws from upsert; report it instead of crashing the app.
+                val saved = runCatching { app.connections.upsert(conn) }
+                    .onFailure { Toast.makeText(activity, "Couldn't save host: ${it.message}", Toast.LENGTH_LONG).show() }
+                    .isSuccess
+                if (saved) {
+                    connections = app.connections.list()
+                    showForm = false
+                    editing = null
+                }
             }
         )
     }
@@ -356,6 +362,7 @@ private fun ConnectionFormSheet(
                 AuthMethod.PASSWORD -> {
                     OutlinedTextField(password, { password = it },
                         label = { Text("Password") }, singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrect = false),
                         visualTransformation = PasswordVisualTransformation(),
                         modifier = Modifier.fillMaxWidth())
                 }

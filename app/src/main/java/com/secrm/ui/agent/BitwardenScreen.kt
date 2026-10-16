@@ -10,6 +10,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.fragment.app.FragmentActivity
@@ -114,5 +116,7 @@ fun BitwardenScreen(app: SecureRemoteApp, onBack: () -> Unit) {
 @Composable
 private fun Field(value: String, onChange: (String) -> Unit, label: String, hidden: Boolean = false) =
     OutlinedTextField(value, onChange, label = { Text(label) }, singleLine = true,
+        // Secrets: a password keyboard keeps the IME from learning or suggesting them.
+        keyboardOptions = if (hidden) KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrect = false) else KeyboardOptions.Default,
         visualTransformation = if (hidden) PasswordVisualTransformation() else VisualTransformation.None,
         modifier = Modifier.fillMaxWidth())

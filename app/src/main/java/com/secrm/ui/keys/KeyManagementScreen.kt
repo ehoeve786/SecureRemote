@@ -27,7 +27,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import android.widget.Toast
 import com.secrm.SecureRemoteApp
 import com.secrm.core.ssh.tools.SavedKey
 import com.secrm.design.*
@@ -88,7 +91,8 @@ fun KeyManagementScreen(app: SecureRemoteApp, onBack: (() -> Unit)? = null) {
                         },
                         onEdit = { editing = k; showImport = true },
                         onDelete = {
-                            app.keys.delete(k.id)
+                            runCatching { app.keys.delete(k.id) }
+                                .onFailure { Toast.makeText(ctx, "Couldn't delete key: ${it.message}", Toast.LENGTH_LONG).show() }
                             keys = app.keys.list()
                         }
                     )
@@ -102,16 +106,21 @@ fun KeyManagementScreen(app: SecureRemoteApp, onBack: (() -> Unit)? = null) {
             initial = editing,
             onDismiss = { showImport = false; editing = null },
             onSave = { name, pem, pub, algo, pass ->
-                if (editing == null) {
-                    app.keys.add(name, pem, pub, algo, pass)
-                } else {
-                    app.keys.updateMetadata(editing!!.copy(
-                        name = name, publicKey = pub, algorithm = algo, passphrase = pass
-                    ))
+                // A corrupt store throws from add/update; report it instead of crashing the app.
+                val saved = runCatching {
+                    if (editing == null) {
+                        app.keys.add(name, pem, pub, algo, pass)
+                    } else {
+                        app.keys.updateMetadata(editing!!.copy(
+                            name = name, publicKey = pub, algorithm = algo, passphrase = pass
+                        ))
+                    }
+                }.onFailure { Toast.makeText(ctx, "Couldn't save key: ${it.message}", Toast.LENGTH_LONG).show() }.isSuccess
+                if (saved) {
+                    keys = app.keys.list()
+                    showImport = false
+                    editing = null
                 }
-                keys = app.keys.list()
-                showImport = false
-                editing = null
             }
         )
     }
@@ -231,6 +240,9 @@ private fun KeyImportSheet(
                     label = { Text("Paste PEM") },
                     placeholder = { Text("-----BEGIN OPENSSH PRIVATE KEY-----") },
                     minLines = 4, maxLines = 8,
+                    // The key is secret material: keep it out of the IME and out of plain view.
+                    keyboardOptions = KeyboardOptions(autoCorrect = false),
+                    visualTransformation = PasswordVisualTransformation(),
                     modifier = Modifier.fillMaxWidth())
                 PillButton("Pick file…", PillStyle.Ghost, Modifier.fillMaxWidth()) {
                     picker.launch(arrayOf("*/*"))
@@ -250,6 +262,7 @@ private fun KeyImportSheet(
             OutlinedTextField(pass, { pass = it },
                 label = { Text("Passphrase (optional)") },
                 singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrect = false),
                 visualTransformation = PasswordVisualTransformation(),
                 modifier = Modifier.fillMaxWidth())
 

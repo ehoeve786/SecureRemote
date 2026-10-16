@@ -21,6 +21,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import android.os.PersistableBundle
 import com.secrm.SecureRemoteApp
 import com.secrm.core.tunnel.Tunnel
 import com.secrm.design.*
@@ -332,19 +333,17 @@ private fun McpSection(app: SecureRemoteApp) {
                 Spacer(Modifier.height(Space.md))
                 Text("Local token (on-phone callers only)", style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Medium)
-                Text(localToken.ifBlank { "(generated on first start)" },
-                    style = MaterialTheme.mono, color = MaterialTheme.colorScheme.onSurface)
+                SecretOrPlaceholder(localToken)
 
                 Spacer(Modifier.height(Space.md))
                 Text("Bearer token", style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Medium)
-                Text(bearer.ifBlank { "(generated on first start)" },
-                    style = MaterialTheme.mono, color = MaterialTheme.colorScheme.onSurface)
+                SecretOrPlaceholder(bearer)
                 if (bearer.isNotBlank()) {
                     Spacer(Modifier.height(Space.xs))
                     PillButton("Copy token", PillStyle.Ghost, Modifier.fillMaxWidth()) {
                         val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        cm.setPrimaryClip(ClipData.newPlainText("mcp bearer", bearer))
+                        cm.setPrimaryClip(sensitiveClip("mcp bearer", bearer))
                     }
                     Spacer(Modifier.height(Space.xs))
                     // Old token stops working at once; MCP clients using it must be given the new one.
@@ -449,3 +448,21 @@ private fun ConfirmAction(title: String, text: String, action: String, onConfirm
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }
+
+/** Shows a token masked until the user asks to see it; blank shows the placeholder. */
+@Composable
+private fun SecretOrPlaceholder(value: String) {
+    if (value.isBlank()) {
+        Text("(generated on first start)", style = MaterialTheme.mono, color = MaterialTheme.colorScheme.onSurface)
+    } else {
+        var shown by remember { mutableStateOf(false) }
+        Text(if (shown) value else "•".repeat(32), style = MaterialTheme.mono, color = MaterialTheme.colorScheme.onSurface)
+        PillButton(if (shown) "Hide" else "Show", PillStyle.Ghost, Modifier.fillMaxWidth()) { shown = !shown }
+    }
+}
+
+/** A clip the system keeps out of clipboard previews (Android 13+ reads the flag; older versions ignore it). */
+private fun sensitiveClip(label: String, text: String): ClipData =
+    ClipData.newPlainText(label, text).apply {
+        description.extras = PersistableBundle().apply { putBoolean("android.content.extra.IS_SENSITIVE", true) }
+    }
