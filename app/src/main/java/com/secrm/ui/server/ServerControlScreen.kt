@@ -113,6 +113,7 @@ private fun TailscaleSection(app: SecureRemoteApp) {
     val uri = LocalUriHandler.current
     val ctx = LocalContext.current
     var public by remember { mutableStateOf(ts.public) }
+    var confirmPublic by remember { mutableStateOf(false) }
     NetworkCard("Tailscale", st,
         "Joins your tailnet in-app (no VPN). SSH reaches tailnet hosts and subnet routes; " +
         "the MCP server is served at https://<this phone>/mcp."
@@ -124,9 +125,31 @@ private fun TailscaleSection(app: SecureRemoteApp) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Public (Funnel) for claude.ai", style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
-            // Funnel forwards to the MCP server, so it must be running.
-            Switch(public, { public = it; ts.public = it; if (it) McpServerService.start(ctx) })
+            // Turning Funnel on makes the MCP server reachable from the internet, so it is confirmed first.
+            // Turning it off only narrows access, so it applies at once.
+            Switch(public, {
+                if (it) confirmPublic = true else { public = false; ts.public = false }
+            })
         }
+        if (confirmPublic) AlertDialog(
+            onDismissRequest = { confirmPublic = false },
+            title = { Text("Make the MCP server public?") },
+            text = {
+                Text("Anyone on the internet who has the MCP bearer token, or a valid Claude connection, " +
+                    "can run commands on your enabled SSH connections. The pairing page is also public. " +
+                    "Only turn this on if you need claude.ai to reach this phone.")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmPublic = false
+                    public = true
+                    ts.public = true
+                    // Funnel forwards to the MCP server, so it must be running.
+                    McpServerService.start(ctx)
+                }) { Text("Make public") }
+            },
+            dismissButton = { TextButton(onClick = { confirmPublic = false }) { Text("Cancel") } },
+        )
         if (public) ts.funnelProblem?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.status.warning) }
         (st as? Tunnel.State.Up)?.takeIf { public && ts.funnelProblem == null }?.let { up ->
             val url = "https://${up.name}/mcp"
