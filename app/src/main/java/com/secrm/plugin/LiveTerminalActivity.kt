@@ -62,7 +62,8 @@ class LiveTerminalActivity : ComponentActivity() {
                         color = Color.White,
                         modifier = Modifier.padding(Space.md),
                     )
-                    TerminalSurface(bridge, modifier = Modifier.weight(1f).fillMaxWidth())
+                    // Read-only: the soft keyboard stays hidden.
+                    TerminalSurface(bridge, modifier = Modifier.weight(1f).fillMaxWidth(), keyboard = false)
                 }
             }
         }

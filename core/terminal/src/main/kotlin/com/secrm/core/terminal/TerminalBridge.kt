@@ -128,20 +128,22 @@ class TerminalBridge private constructor(
 fun TerminalSurface(
     bridge: TerminalBridge,
     onReady: (Boolean) -> Unit = {},
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** False for a read-only view: no soft keyboard, and taps don't take focus. */
+    keyboard: Boolean = true,
 ) {
     // The keyboard's input only reaches the terminal once it holds Compose focus. Take it on the
     // first frame, as Tidegate does, before termlib shows the IME: requesting it later (after a slow
     // tunnelled connect) re-targets focus away from the IME's live input connection.
     val focus = remember { FocusRequester() }
-    LaunchedEffect(Unit) { withFrameNanos {}; runCatching { focus.requestFocus() } }
+    LaunchedEffect(Unit) { if (keyboard) { withFrameNanos {}; runCatching { focus.requestFocus() } } }
     LaunchedEffect(bridge) { onReady(bridge.start()) }
     Terminal(
         terminalEmulator = bridge.emulator,
         modifier = modifier,
         initialFontSize = 13.sp,
-        keyboardEnabled = true,
+        keyboardEnabled = keyboard,
         focusRequester = focus,
-        onTerminalTap = { runCatching { focus.requestFocus() } },
+        onTerminalTap = { if (keyboard) runCatching { focus.requestFocus() } },
     )
 }
