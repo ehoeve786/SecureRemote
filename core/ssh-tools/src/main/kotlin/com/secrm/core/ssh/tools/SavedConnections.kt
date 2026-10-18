@@ -42,16 +42,15 @@ interface SavedConnections {
 }
 
 /**
- * Connects to a saved connection, remembering its host key on first use. If a direct connect to a
- * private address fails, follows the device to its new address by host key (Tidegate's
- * HostRediscovery) and saves it.
+ * Connects to a saved connection, remembering its host key on first use. With [allowRediscover], a
+ * failed direct connect follows the device to its new address by host key and saves it.
  */
 suspend fun SshClientManager.connectSaved(
     conn: SavedConnection,
     auth: SshAuth,
     saved: SavedConnections,
-    /** Off for MCP callers: a moved device is only followed when the owner has connected in the app. */
-    allowRediscover: Boolean = true,
+    /** Off by default: a probe of the local network only runs when the owner asks for it. */
+    allowRediscover: Boolean = false,
 ): Boolean {
     fun cfg(host: String) = SshConfig(host = host, port = conn.port, username = conn.user, auth = auth, via = conn.via, hostKey = conn.hostKey, name = conn.name)
     if (connect(cfg(conn.host))) {
