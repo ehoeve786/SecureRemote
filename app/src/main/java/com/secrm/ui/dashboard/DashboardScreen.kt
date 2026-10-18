@@ -54,6 +54,8 @@ fun DashboardScreen(
     var showForm by remember { mutableStateOf(false) }
     var connecting by remember { mutableStateOf<String?>(null) }
     var connectError by remember { mutableStateOf<String?>(null) }
+    // The last failed attempt, so the owner can ask for a network search for that host.
+    var failed by remember { mutableStateOf<Pair<SavedConnection, SshAuth>?>(null) }
 
     Scaffold(
         topBar = {
@@ -109,7 +111,18 @@ fun DashboardScreen(
                                 Column(Modifier.padding(Space.lg), verticalArrangement = Arrangement.spacedBy(Space.xs)) {
                                     Text("Couldn't connect", style = MaterialTheme.typography.titleSmall)
                                     Text(err.take(240), style = MaterialTheme.mono)
-                                    TextButton({ connectError = null }, Modifier.align(Alignment.End)) { Text("Dismiss") }
+                                    failed?.let { (c, a) ->
+                                        TextButton({
+                                            scope.launch {
+                                                connectError = null; failed = null; connecting = c.name
+                                                val e = app.sessions.connect(c, a, rediscover = true)
+                                                connections = app.connections.list()
+                                                connecting = null
+                                                if (e == null) onOpenShell() else { connectError = e; failed = c to a }
+                                            }
+                                        }, Modifier.align(Alignment.End)) { Text("Search network for ${c.name}") }
+                                    }
+                                    TextButton({ connectError = null; failed = null }, Modifier.align(Alignment.End)) { Text("Dismiss") }
                                 }
                             }
                         }
@@ -125,7 +138,7 @@ fun DashboardScreen(
                             serverVersion = (live?.ssh?.state?.value as? SshState.Connected)?.serverVersion,
                             onConnect = {
                                 scope.launch {
-                                    connectError = null
+                                    connectError = null; failed = null
                                     connecting = conn.name
                                     val auth: SshAuth? = when (conn.authMethod) {
                                         AuthMethod.PASSWORD -> {
@@ -158,9 +171,11 @@ fun DashboardScreen(
                                     connections = app.connections.list() // host or key may have been updated
                                     connecting = null
                                     if (err == null) {
+                                        failed = null
                                         onOpenShell()
                                     } else {
                                         connectError = err
+                                        failed = conn to auth
                                     }
                                 }
                             },
