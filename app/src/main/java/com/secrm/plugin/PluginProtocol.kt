@@ -84,7 +84,7 @@ object PluginProtocol {
         // The completion intent is text from the sender, so it may only reach the host's own packages.
         // A selector or a target outside them would turn this into an intent redirect or a leak of the output.
         val pkg = completion.getStringExtra(CALL_PACKAGE) ?: completion.component?.packageName ?: completion.`package`
-        if (completion.selector != null || !isGenuineHost(context, pkg)) return
+        if (completion.selector != null || pkg == null || !isGenuineHost(context, pkg)) return
         completion.putExtra(EXTRA_RESULT_CODE, resultCode)
         vars?.let { completion.putExtra(EXTRA_VARIABLES, it) }
         val cls = completion.getStringExtra(CALL_SERVICE)
