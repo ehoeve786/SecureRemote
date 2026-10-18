@@ -130,8 +130,11 @@ class SshIntegrationTest {
         assertTrue("shell did not open", ok)
     }
 
-    private fun config(pw: String = password) =
-        SshConfig(host = "127.0.0.1", port = port, username = user, auth = SshAuth.Password(pw), connectTimeoutMs = 5_000)
+    /** The test server's own key, as the owner would approve it. */
+    private suspend fun config(pw: String = password) = SshConfig(
+        host = "127.0.0.1", port = port, username = user, auth = SshAuth.Password(pw), connectTimeoutMs = 5_000,
+        hostKey = requireNotNull(ssh.scanHostKey("127.0.0.1", port)) { "test server gave no host key" },
+    )
 
     @Test fun connectsWithPasswordAndRunsShellCommands() = runBlocking {
         connectOrFail()

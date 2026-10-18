@@ -68,10 +68,10 @@ class HostSessions(private val app: SecureRemoteApp) {
     fun setClip(c: Clip?) { _clip.value = c }
 
     /** Connects [conn] alongside the others (or re-connects it). Returns null on success, else why it failed. */
-    suspend fun connect(conn: SavedConnection, auth: SshAuth, rediscover: Boolean = false): String? {
+    suspend fun connect(conn: SavedConnection, auth: SshAuth, rediscover: Boolean = false, approvedKey: String? = null): String? {
         find(conn.name)?.takeIf { it.ssh.state.value is SshState.Connected }?.let { select(conn.name); return null }
         val ssh = app.newClient()
-        if (!ssh.connectSaved(conn, auth, app.connections, allowRediscover = rediscover)) {
+        if (!ssh.connectSaved(conn, auth, app.connections, allowRediscover = rediscover, approvedKey = approvedKey)) {
             val why = (ssh.state.value as? SshState.Error)?.message ?: "SSH connect failed"
             ssh.shutdown()
             return why
@@ -80,6 +80,12 @@ class HostSessions(private val app: SecureRemoteApp) {
         all.update { list -> list.filter { it.name != conn.name } + HostSession(conn.name, ssh, app) }
         select(conn.name)
         return null
+    }
+
+    /** The key a host without one presents, for the owner to approve before connecting. Sends no credentials. */
+    suspend fun scanKey(conn: SavedConnection): String? {
+        val probe = app.newClient()
+        return try { probe.scanHostKey(conn.host, conn.port, conn.via) } finally { probe.shutdown() }
     }
 
     fun close(name: String) {

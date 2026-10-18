@@ -24,7 +24,7 @@ data class SshConfig(
     val connectTimeoutMs: Int = 10_000,
     /** Private network to route through ("tailscale" or "wireguard"), or null for direct. */
     val via: String? = null,
-    /** Trusted host key (base64), or null to trust whatever the server presents (first connect). */
+    /** Host key (base64) the owner approved. Required: a connect without one is refused. */
     val hostKey: String? = null,
     /** Name of the saved connection this is, for showing which host is live. */
     val name: String? = null,
@@ -32,6 +32,11 @@ data class SshConfig(
 
 private val log = ArrayDeque<String>()
 private const val ALIAS = "secrm-host"
+
+/** SHA-256 fingerprint of a base64 host key, in the form OpenSSH prints. */
+fun hostKeyFingerprint(hostKey: String): String =
+    "SHA256:" + java.util.Base64.getEncoder().withoutPadding()
+        .encodeToString(java.security.MessageDigest.getInstance("SHA-256").digest(java.util.Base64.getDecoder().decode(hostKey)))
 
 class SshClientManager {
     init {
@@ -99,7 +104,21 @@ class SshClientManager {
         java.net.Socket().use { it.connect(java.net.InetSocketAddress(host, port), 400) }
     }.isSuccess
 
-    /** The server's host key; authentication is expected to fail, but the key exchange precedes it. */
+    /**
+     * The server's host key, for the owner to approve before anything is sent. Sends no credentials:
+     * the key exchange happens, then the probe user is refused.
+     */
+    suspend fun scanHostKey(host: String, port: Int, via: String? = null): String? = withContext(Dispatchers.IO) {
+        // Null, not a guess, when the route is down: a key from a direct probe would not be the tunnel's host.
+        runCatching {
+            val s = JSch().getSession("probe", host, port)
+            s.setConfig("StrictHostKeyChecking", "no")
+            if (via != null) s.setProxy(proxy(via))
+            runCatching { s.connect(if (via != null) 30_000 else 3_000) }
+            s.hostKey?.key.also { s.disconnect() }
+        }.getOrNull()
+    }
+
     private fun keyScan(host: String, port: Int): String? {
         val s = JSch().getSession("probe", host, port).apply { setConfig("StrictHostKeyChecking", "no") }
         runCatching { s.connect(3000) }
@@ -137,14 +156,13 @@ class SshClientManager {
             }
 
             val s = jsch.getSession(cfg.username, cfg.host, cfg.port)
-            // A known key is checked before authenticating, so credentials never go to an impostor.
-            cfg.hostKey?.let {
-                s.setHostKeyAlias(ALIAS)
-                jsch.hostKeyRepository.add(HostKey(ALIAS, java.util.Base64.getDecoder().decode(it)), null)
-            }
+            // Only a pinned key is accepted, and it is checked before authenticating, so credentials never go to an impostor.
+            val pinned = requireNotNull(cfg.hostKey) { "Host key not confirmed for ${cfg.host}" }
+            s.setHostKeyAlias(ALIAS)
+            jsch.hostKeyRepository.add(HostKey(ALIAS, java.util.Base64.getDecoder().decode(pinned)), null)
             cfg.via?.let { s.setProxy(proxy(it)) }
             s.setConfig(java.util.Properties().apply {
-                put("StrictHostKeyChecking", if (cfg.hostKey != null) "yes" else "no")
+                put("StrictHostKeyChecking", "yes")
                 // Plain CTR + HMAC-SHA2: the AEAD/ETM defaults (chacha20, GCM) corrupt packets on Android
                 // once several channels share the session (servers log "message authentication code
                 // incorrect" and hang up), which is what killed the session when SFTP opened.
