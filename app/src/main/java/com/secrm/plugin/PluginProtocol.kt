@@ -30,6 +30,7 @@ object PluginProtocol {
      */
     val HOST_SIGNERS: Map<String, Set<String>> = mapOf(
         "net.dinglisch.android.taskerm" to setOf("973fe25b9be28fb7436d49582b04277767c852539be31783d134a55621b6636d"), // Tasker
+        "com.arlosoft.macrodroid" to setOf("b40e273464148c85227ce46ba360096bf405dd93d70c14668a83d205e59ffdb1"), // MacroDroid
     )
 
     /** True only if [pkg] is an installed host signed by one of its pinned certificates. The name alone is not enough. */
