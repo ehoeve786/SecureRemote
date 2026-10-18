@@ -79,7 +79,7 @@ class McpServerIntegrationTest {
                 },
             )
         }
-        val auth = McpAuth(localPort, remotePort, "local-token", setOf("*.ts.net")) {
+        val auth = McpAuth(localPort, remotePort, "local-token", { setOf("*.ts.net") }) {
             it == "static-remote" || oauth.isValid(it)
         }
         server = McpHttpServer(dispatcher, auth, oauth, localPort, remotePort)
