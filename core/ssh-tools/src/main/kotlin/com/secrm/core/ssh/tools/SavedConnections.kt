@@ -20,7 +20,7 @@ data class SavedConnection(
     val hostKey: String? = null,
     /** Opt-in: a connection is not reachable over MCP until its owner enables it. */
     val allowMcpExec: Boolean = false,
-    val allowMcpRead: Boolean = true
+    val allowMcpRead: Boolean = false
 )
 
 interface SavedConnections {

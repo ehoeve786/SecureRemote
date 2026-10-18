@@ -305,7 +305,7 @@ private fun ConnectionFormSheet(
     var keyId by remember { mutableStateOf(initial?.keyId) }
     var via by remember { mutableStateOf(initial?.via) }
     var canExec by remember { mutableStateOf(initial?.allowMcpExec ?: false) }
-    var canRead by remember { mutableStateOf(initial?.allowMcpRead ?: true) }
+    var canRead by remember { mutableStateOf(initial?.allowMcpRead ?: false) }
 
     val savedKeys = remember { app.keys.list() }
     var bwKeys by remember { mutableStateOf(app.vault.keys) }

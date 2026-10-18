@@ -54,6 +54,9 @@ class EncryptedConfigStore(private val context: Context) {
         get() = get("ssh.pass"); set(v) = put("ssh.pass", v ?: "")
     var sshConnectionsJson: String?
         get() = get("ssh.connections"); set(v) = put("ssh.connections", v ?: "")
+    /** Set once existing saved hosts have been reset to not readable over MCP. */
+    var mcpReadDefaultMigrated: Boolean
+        get() = get("mcp.read.migrated") == "1"; set(v) = put("mcp.read.migrated", if (v) "1" else "0")
     var mcpBearerToken: String?
         get() = get("mcp.tok"); set(v) = put("mcp.tok", v ?: "")
     /** Token for the on-phone port. Its own secret, not derived from the remote bearer. */

@@ -15,6 +15,14 @@ class ConnectionRepository(
 
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
+    init {
+        // Read access used to default on, so every saved host was listed to paired agents. Reset once.
+        if (!config.mcpReadDefaultMigrated) {
+            runCatching { write(readStrict().map { it.copy(allowMcpRead = false) }) }
+                .onSuccess { config.mcpReadDefaultMigrated = true }
+        }
+    }
+
     override fun list(): List<SavedConnection> = runCatching { readStrict() }.getOrDefault(emptyList())
 
     /** Throws if the stored list is unreadable. Writes use this, so they never replace it with a partial list. */
