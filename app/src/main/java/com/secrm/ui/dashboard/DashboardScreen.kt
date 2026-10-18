@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import com.secrm.SecureRemoteApp
 import com.secrm.core.ssh.SshAuth
 import com.secrm.core.ssh.SshConfig
+import com.secrm.core.ssh.hostKeyFingerprint
 import com.secrm.core.ssh.SshState
 import com.secrm.core.ssh.tools.AuthMethod
 import com.secrm.core.ssh.tools.SavedConnection
@@ -56,6 +57,8 @@ fun DashboardScreen(
     var connectError by remember { mutableStateOf<String?>(null) }
     // The last failed attempt, so the owner can ask for a network search for that host.
     var failed by remember { mutableStateOf<Pair<SavedConnection, SshAuth>?>(null) }
+    // A host never connected before: its key, waiting for the owner to check the fingerprint.
+    var pendingTrust by remember { mutableStateOf<PendingTrust?>(null) }
 
     Scaffold(
         topBar = {
@@ -167,6 +170,13 @@ fun DashboardScreen(
                                         connecting = null
                                         return@launch
                                     }
+                                    if (conn.hostKey == null) {
+                                        val key = app.sessions.scanKey(conn)
+                                        connecting = null
+                                        if (key == null) connectError = "Could not reach ${conn.host}"
+                                        else pendingTrust = PendingTrust(conn, auth, key)
+                                        return@launch
+                                    }
                                     val err = app.sessions.connect(conn, auth)
                                     connections = app.connections.list() // host or key may have been updated
                                     connecting = null
@@ -213,7 +223,31 @@ fun DashboardScreen(
             }
         )
     }
+
+    pendingTrust?.let { p ->
+        AlertDialog(
+            onDismissRequest = { pendingTrust = null },
+            title = { Text("Trust ${p.conn.host}?") },
+            text = { Text("First connection to this host. Check this fingerprint against the server before trusting it:\n\n${hostKeyFingerprint(p.key)}") },
+            confirmButton = {
+                TextButton({
+                    pendingTrust = null
+                    scope.launch {
+                        connecting = p.conn.name
+                        val err = app.sessions.connect(p.conn, p.auth, approvedKey = p.key)
+                        connections = app.connections.list()
+                        connecting = null
+                        if (err == null) onOpenShell() else connectError = err
+                    }
+                }) { Text("Trust and connect") }
+            },
+            dismissButton = { TextButton({ pendingTrust = null }) { Text("Cancel") } },
+        )
+    }
 }
+
+/** A host waiting for its first-connect key to be approved. */
+private data class PendingTrust(val conn: SavedConnection, val auth: SshAuth, val key: String)
 
 @Composable
 private fun ConnectionCard(
@@ -321,6 +355,7 @@ private fun ConnectionFormSheet(
     var via by remember { mutableStateOf(initial?.via) }
     var canExec by remember { mutableStateOf(initial?.allowMcpExec ?: false) }
     var canRead by remember { mutableStateOf(initial?.allowMcpRead ?: false) }
+    var forgetKey by remember { mutableStateOf(false) }
 
     val savedKeys = remember { app.keys.list() }
     var bwKeys by remember { mutableStateOf(app.vault.keys) }
@@ -456,6 +491,13 @@ private fun ConnectionFormSheet(
                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
             )
 
+            if (initial?.hostKey != null) {
+                PillButton(
+                    if (forgetKey) "Host key will be asked again" else "Forget host key",
+                    PillStyle.Ghost, Modifier.fillMaxWidth(),
+                ) { forgetKey = true }
+            }
+
             Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                 PillButton("Cancel", PillStyle.Ghost, Modifier.weight(1f)) { onDismiss() }
                 PillButton("Save", PillStyle.Primary, Modifier.weight(1f)) {
@@ -469,7 +511,8 @@ private fun ConnectionFormSheet(
                         password = if (authMethod == AuthMethod.PASSWORD) password else "",
                         keyId = if (authMethod != AuthMethod.PASSWORD) keyId else null,
                         via = via,
-                        hostKey = initial?.hostKey, // same device; also how it's found if its IP changes
+                        // Kept only for the same address: a new address is a new host and needs its key approved again.
+                        hostKey = if (forgetKey || initial == null || initial.host != host.trim() || initial.port != (portNum ?: 22) || initial.via != via) null else initial.hostKey,
                         allowMcpExec = canExec,
                         allowMcpRead = canRead
                     ))

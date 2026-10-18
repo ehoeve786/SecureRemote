@@ -42,8 +42,9 @@ interface SavedConnections {
 }
 
 /**
- * Connects to a saved connection, remembering its host key on first use. With [allowRediscover], a
- * failed direct connect follows the device to its new address by host key and saves it.
+ * Connects to a saved connection, pinned to its host key. A host with no key yet is pinned only to
+ * [approvedKey], the key the owner checked in the app; any other key is refused. With [allowRediscover],
+ * a failed direct connect follows the device to its new address by host key and saves it.
  */
 suspend fun SshClientManager.connectSaved(
     conn: SavedConnection,
@@ -51,14 +52,20 @@ suspend fun SshClientManager.connectSaved(
     saved: SavedConnections,
     /** Off by default: a probe of the local network only runs when the owner asks for it. */
     allowRediscover: Boolean = false,
+    approvedKey: String? = null,
 ): Boolean {
-    fun cfg(host: String) = SshConfig(host = host, port = conn.port, username = conn.user, auth = auth, via = conn.via, hostKey = conn.hostKey, name = conn.name)
-    if (connect(cfg(conn.host))) {
-        if (conn.hostKey == null) saved.save(conn.copy(hostKey = hostKey))
+    fun cfg(host: String, key: String) = SshConfig(host = host, port = conn.port, username = conn.user, auth = auth, via = conn.via, hostKey = key, name = conn.name)
+    val pinned = conn.hostKey ?: run {
+        val seen = scanHostKey(conn.host, conn.port, conn.via) ?: return false
+        if (seen != approvedKey) return false
+        seen
+    }
+    if (connect(cfg(conn.host, pinned))) {
+        if (conn.hostKey == null) saved.save(conn.copy(hostKey = pinned))
         return true
     }
-    val moved = (if (allowRediscover) conn.hostKey?.takeIf { conn.via == null }?.let { rediscover(conn.host, conn.port, it) } else null)
+    val moved = (if (allowRediscover && conn.via == null) rediscover(conn.host, conn.port, pinned) else null)
         ?: return false
     saved.save(conn.copy(host = moved))
-    return connect(cfg(moved))
+    return connect(cfg(moved, pinned))
 }
