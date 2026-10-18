@@ -107,7 +107,17 @@ class McpHttpServer(
                 // No server-sent event stream.
                 get(mcpPath) { call.respond(HttpStatusCode.MethodNotAllowed) }
 
-                oauthRoutes(oauth, mcpPath)
+                // OAuth and well-known routes answer only to this node's public name on the remote port.
+                route("") {
+                    intercept(ApplicationCallPipeline.Plugins) {
+                        if (call.request.path() == mcpPath) return@intercept // /mcp checks its own host
+                        if (!auth.hostAllowed(call.request.local.localPort, call.request.headers[HttpHeaders.Host])) {
+                            call.respondText("Host not allowed", status = HttpStatusCode.Forbidden)
+                            finish()
+                        }
+                    }
+                    oauthRoutes(oauth, mcpPath)
+                }
             }
         }.start(wait = false)
         Log.i(TAG, "MCP listening on 127.0.0.1:$localPort and :$remotePort$mcpPath")

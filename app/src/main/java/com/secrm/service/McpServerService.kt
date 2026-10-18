@@ -74,7 +74,10 @@ class McpServerService : Service() {
         }
         val started = McpHttpServer(
             dispatcher = app.dispatcher,
-            auth = McpAuth(7823, 7824, local, setOf("*.ts.net"), remote),
+            // Only this node's own public name: the tailnet suffix would admit any other node on it.
+            auth = McpAuth(7823, 7824, local, {
+                (app.tailscale.state.value as? com.secrm.core.tunnel.Tunnel.State.Up)?.name?.let { setOf(it.lowercase()) }.orEmpty()
+            }, remote),
             oauth = app.oauth
         )
         try {

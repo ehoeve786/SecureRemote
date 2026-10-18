@@ -5,7 +5,7 @@ import org.junit.Test
 
 class McpAuthTest {
     private val remoteTokens = setOf("remote-token")
-    private val auth = McpAuth(7823, 7824, "local-token", setOf("*.ts.net", "example.org")) { it in remoteTokens }
+    private val auth = McpAuth(7823, 7824, "local-token", { setOf("*.ts.net", "example.org") }) { it in remoteTokens }
 
     private fun check(port: Int, host: String?, origin: String? = null, authorization: String?) =
         auth.check(port, host, origin, authorization)
@@ -50,5 +50,11 @@ class McpAuthTest {
 
     @Test fun unknownPortIsForbidden() {
         assertEquals(403, check(9999, "127.0.0.1", authorization = "Bearer local-token").code())
+    }
+
+    @Test fun oauthRoutesAnswerOnlyToAllowedHostOnRemotePort() {
+        assertEquals(true, auth.hostAllowed(7824, "Box.TAIL1.ts.net:443"))
+        assertEquals(false, auth.hostAllowed(7824, "evil.example.com"))
+        assertEquals(false, auth.hostAllowed(7823, "box.tail1.ts.net"))
     }
 }

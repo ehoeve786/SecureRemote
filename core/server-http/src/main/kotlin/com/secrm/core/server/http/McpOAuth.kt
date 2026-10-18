@@ -124,6 +124,6 @@ class McpOAuth(
 
         /** Claude's OAuth callbacks only. */
         fun allowedRedirect(uri: String?) = runCatching { URI(uri) }.getOrNull()
-            ?.let { it.scheme == "https" && it.host in setOf("claude.ai", "claude.com") } == true
+            ?.let { it.scheme == "https" && it.host?.lowercase() in setOf("claude.ai", "claude.com") && it.path == "/api/mcp/auth_callback" } == true
     }
 }
