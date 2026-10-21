@@ -50,8 +50,8 @@ suspend fun SshClientManager.connectSaved(
     conn: SavedConnection,
     auth: SshAuth,
     saved: SavedConnections,
-    /** Off by default: a probe of the local network only runs when the owner asks for it. */
-    allowRediscover: Boolean = false,
+    /** On for the owner's app and plugin; MCP passes false, so an agent never triggers a network probe. */
+    allowRediscover: Boolean = true,
     approvedKey: String? = null,
 ): Boolean {
     fun cfg(host: String, key: String) = SshConfig(host = host, port = conn.port, username = conn.user, auth = auth, via = conn.via, hostKey = key, name = conn.name)

@@ -177,6 +177,9 @@ class SshClientManager {
                     })
             })
             if (cfg.auth is SshAuth.Password) s.setPassword((cfg.auth as SshAuth.Password).password)
+            // Probes the link every 15 s; three missed replies end the session, so a drop is noticed.
+            s.setServerAliveInterval(15_000)
+            s.setServerAliveCountMax(3)
 
             try { s.connect(if (cfg.via != null) maxOf(cfg.connectTimeoutMs, 30_000) else cfg.connectTimeoutMs) } catch (t: Throwable) { s.disconnect(); throw t }
             return s
@@ -195,6 +198,7 @@ class SshClientManager {
             connectedName = cfg.name
             generation++
             _state.value = SshState.Connected(s.serverVersion ?: "unknown")
+            watchSession(s)
             true
         } catch (t: Throwable) {
             Log.e("SSH", "connect failed", t)
@@ -291,7 +295,26 @@ class SshClientManager {
         cleanup(); _state.value = SshState.Disconnected
     }
 
+    private var watchdog: Job? = null
+
+    /** JSch never reports a dead link on its own; poll it so the UI stops showing the host as connected. */
+    private fun watchSession(s: Session) {
+        watchdog?.cancel()
+        watchdog = scope.launch {
+            while (true) {
+                delay(5_000)
+                if (session !== s) return@launch
+                if (!s.isConnected) {
+                    cleanup()
+                    _state.value = SshState.Error("Connection lost")
+                    return@launch
+                }
+            }
+        }
+    }
+
     private fun cleanup() {
+        watchdog?.cancel(); watchdog = null
         connectedName = null
         runCatching { shell?.disconnect() }; shell = null
         runCatching { session?.disconnect() }; session = null

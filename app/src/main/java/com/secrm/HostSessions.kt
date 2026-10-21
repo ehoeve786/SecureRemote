@@ -68,7 +68,7 @@ class HostSessions(private val app: SecureRemoteApp) {
     fun setClip(c: Clip?) { _clip.value = c }
 
     /** Connects [conn] alongside the others (or re-connects it). Returns null on success, else why it failed. */
-    suspend fun connect(conn: SavedConnection, auth: SshAuth, rediscover: Boolean = false, approvedKey: String? = null): String? {
+    suspend fun connect(conn: SavedConnection, auth: SshAuth, rediscover: Boolean = true, approvedKey: String? = null): String? {
         find(conn.name)?.takeIf { it.ssh.state.value is SshState.Connected }?.let { select(conn.name); return null }
         val ssh = app.newClient()
         if (!ssh.connectSaved(conn, auth, app.connections, allowRediscover = rediscover, approvedKey = approvedKey)) {
