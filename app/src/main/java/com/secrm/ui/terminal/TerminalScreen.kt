@@ -56,14 +56,14 @@ private fun TerminalPage(host: HostSession, onOpenFiles: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             ModeSwitch(onFiles = onOpenFiles)
-            Text(host.target, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            Text(host.name, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f).padding(horizontal = Space.md))
+                modifier = Modifier.weight(1f).padding(horizontal = Space.sm))
             TextButton({ selecting = bridge.transcript() }) { Text("Select") }
             TextButton({
                 (ctx.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager)
                     .setPrimaryClip(android.content.ClipData.newPlainText("command output", bridge.lastOutput()))
-            }) { Text("Copy output") }
+            }) { Text("Copy") }
         } }
         // The terminal itself is always dark, whatever the app theme.
         Box(Modifier.weight(1f).background(androidx.compose.ui.graphics.Color.Black)) {
