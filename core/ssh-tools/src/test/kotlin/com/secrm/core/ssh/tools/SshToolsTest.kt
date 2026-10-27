@@ -19,7 +19,6 @@ class SshToolsTest {
         override fun find(name: String) = conns.firstOrNull { it.name == name }
         override fun privateKeyFor(keyId: String): String? = null
         override fun keyPassphraseFor(keyId: String): String? = null
-        override fun bitwardenKeyFor(itemId: String): String? = null
     }
 
     private fun exec(vararg conns: SavedConnection, connection: String, command: String = "uptime"): ToolResult {

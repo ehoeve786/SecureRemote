@@ -9,7 +9,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
-import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -27,17 +26,12 @@ import com.secrm.SecureRemoteApp
 import com.secrm.core.tunnel.Tunnel
 import com.secrm.design.*
 import com.secrm.service.McpServerService
-import com.secrm.ui.agent.BitwardenScreen
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ServerControlScreen(app: SecureRemoteApp, onBack: (() -> Unit)? = null) {
-    var showAgent by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-
-    androidx.activity.compose.BackHandler(showAgent) { showAgent = false }
-    if (showAgent) { BitwardenScreen(app, onBack = { showAgent = false }); return }
 
     Scaffold(
         topBar = {
@@ -67,9 +61,6 @@ fun ServerControlScreen(app: SecureRemoteApp, onBack: (() -> Unit)? = null) {
             item { SectionHeader("Private network") }
             item { TailscaleSection(app) }
             item { WireGuardSection(app) }
-
-            item { SectionHeader("SSH agent") }
-            item { AgentEntryCard(onOpen = { showAgent = true }) }
 
             item { SectionHeader("MCP server") }
             item { McpSection(app) }
@@ -415,30 +406,6 @@ private fun AboutSection() {
             )
         }
     }
-}
-
-@Composable
-private fun AgentEntryCard(onOpen: () -> Unit) {
-    Card(
-        onClick = onOpen,
-        modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.large,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-    ) {
-        ListItem(
-            headlineContent = { Text("Bitwarden", style = MaterialTheme.typography.titleMedium) },
-            supportingContent = { Text("Use SSH keys from your vault. Unlocks with your fingerprint; keys stay in memory only.") },
-            leadingContent = {
-                Box(Modifier.size(44.dp).background(MaterialTheme.colorScheme.secondaryContainer, androidx.compose.foundation.shape.CircleShape), contentAlignment = Alignment.Center) {
-                    Icon(SecrmIcons.Key, null, tint = MaterialTheme.colorScheme.onSecondaryContainer)
-                }
-            },
-            trailingContent = { Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null) },
-            colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
-        )
-    }
-
 }
 
 /** A confirmation before an action that cannot be undone from the app. */

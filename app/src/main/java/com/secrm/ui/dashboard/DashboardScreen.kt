@@ -25,7 +25,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.fragment.app.FragmentActivity
-import com.secrm.data.authenticate
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.secrm.SecureRemoteApp
@@ -157,12 +156,6 @@ fun DashboardScreen(
                                                 passphrase = app.keys.find(kid)?.passphrase
                                                     ?.takeIf { it.isNotBlank() }
                                             )
-                                        }
-                                        AuthMethod.AGENT -> {
-                                            runCatching { app.vault.ensureUnlocked { activity.authenticate() } }
-                                                .onFailure { connectError = it.message }
-                                            conn.keyId?.let(app.vault::privateKey)
-                                                ?.let { SshAuth.Key(pem = it, passphrase = null) }
                                         }
                                     }
                                     if (auth == null) {
@@ -305,7 +298,7 @@ private fun ConnectionCard(
             Row(horizontalArrangement = Arrangement.spacedBy(Space.sm), verticalAlignment = Alignment.CenterVertically) {
                 val tagBg = if (isActive) s.surface.copy(alpha = 0.5f) else s.surfaceContainerHighest
                 Tag(when (conn.via) { "tailscale" -> "Tailscale"; "wireguard" -> "WireGuard"; else -> "Direct" }, container = tagBg)
-                Tag(when (conn.authMethod) { AuthMethod.PASSWORD -> "Password"; AuthMethod.SAVED_KEY -> "Key"; AuthMethod.AGENT -> "Bitwarden" }, container = tagBg)
+                Tag(when (conn.authMethod) { AuthMethod.PASSWORD -> "Password"; AuthMethod.SAVED_KEY -> "Key" }, container = tagBg)
                 Tag(when {
                     conn.allowMcpExec -> "MCP exec"
                     conn.allowMcpRead -> "MCP read-only"
@@ -358,7 +351,6 @@ private fun ConnectionFormSheet(
     var forgetKey by remember { mutableStateOf(false) }
 
     val savedKeys = remember { app.keys.list() }
-    var bwKeys by remember { mutableStateOf(app.vault.keys) }
     val scope = rememberCoroutineScope()
     val activity = LocalContext.current as FragmentActivity
     fun pick(m: AuthMethod) { if (m != authMethod) keyId = null; authMethod = m }
@@ -366,7 +358,7 @@ private fun ConnectionFormSheet(
     val valid = portNum != null && name.isNotBlank() && host.isNotBlank() && user.isNotBlank() &&
         when (authMethod) {
             AuthMethod.PASSWORD -> password.isNotBlank()
-            AuthMethod.SAVED_KEY, AuthMethod.AGENT -> keyId != null
+            AuthMethod.SAVED_KEY -> keyId != null
         }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
@@ -404,7 +396,7 @@ private fun ConnectionFormSheet(
 
             // ── Auth selector ────────────────────────────────
             Text("Authentication", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-            val authOptions = listOf(AuthMethod.PASSWORD to "Password", AuthMethod.SAVED_KEY to "Key", AuthMethod.AGENT to "Bitwarden")
+            val authOptions = listOf(AuthMethod.PASSWORD to "Password", AuthMethod.SAVED_KEY to "Key")
             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                 authOptions.forEachIndexed { i, (m, label) ->
                     SegmentedButton(authMethod == m, { pick(m) }, SegmentedButtonDefaults.itemShape(i, authOptions.size)) { Text(label) }
@@ -420,26 +412,13 @@ private fun ConnectionFormSheet(
                         modifier = Modifier.fillMaxWidth())
                 }
 
-                AuthMethod.SAVED_KEY, AuthMethod.AGENT -> {
-                    val options = if (authMethod == AuthMethod.SAVED_KEY) savedKeys.map { it.id to it.name }
-                        else bwKeys?.map { it.id to it.name }.orEmpty()
+                AuthMethod.SAVED_KEY -> {
+                    val options = savedKeys.map { it.id to it.name }
                     if (options.isEmpty()) {
                         Text(
-                            when {
-                                authMethod == AuthMethod.SAVED_KEY -> "No saved keys. Open Settings → SSH Keys to import one."
-                                !app.vault.isConfigured -> "Sign in under Settings → Bitwarden first."
-                                bwKeys == null -> "Bitwarden is locked."
-                                else -> "No SSH keys in your Bitwarden vault."
-                            },
+                            "No saved keys. Open Settings → SSH Keys to import one.",
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.status.warning
                         )
-                        if (authMethod == AuthMethod.AGENT && app.vault.isConfigured && bwKeys == null)
-                            PillButton("Unlock Bitwarden", PillStyle.Primary, Modifier.fillMaxWidth()) {
-                                scope.launch {
-                                    runCatching { app.vault.ensureUnlocked { activity.authenticate() } }
-                                    bwKeys = app.vault.keys
-                                }
-                            }
                     } else {
                         var expanded by remember { mutableStateOf(false) }
                         Box {
