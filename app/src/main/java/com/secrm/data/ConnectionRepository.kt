@@ -5,12 +5,18 @@ import com.secrm.core.ssh.tools.AuthMethod
 import com.secrm.core.ssh.tools.SavedConnection
 import com.secrm.core.ssh.tools.SavedConnections
 import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 class ConnectionRepository(
     private val config: EncryptedConfigStore,
     private val keys: KeyRepository,
-    private val vault: BitwardenVault
 ) : SavedConnections {
 
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
@@ -28,7 +34,9 @@ class ConnectionRepository(
     /** Throws if the stored list is unreadable. Writes use this, so they never replace it with a partial list. */
     private fun readStrict(): List<SavedConnection> {
         val raw = config.sshConnectionsJson.orEmpty()
-        if (raw.isNotBlank()) return json.decodeFromString(raw)
+        if (raw.isNotBlank()) return json.decodeFromString(
+            JsonArray(json.parseToJsonElement(raw).jsonArray.map(::fromBitwarden)).toString()
+        )
         val host = config.sshHost.orEmpty()
         if (host.isBlank()) return emptyList()
         val legacy = SavedConnection(
@@ -40,6 +48,13 @@ class ConnectionRepository(
         )
         write(listOf(legacy))
         return listOf(legacy)
+    }
+
+    /** Bitwarden auth was removed: a host saved with it becomes a key host, to be given its key again. */
+    private fun fromBitwarden(el: JsonElement): JsonElement {
+        val o = el.jsonObject
+        return if (o["authMethod"]?.jsonPrimitive?.content == "AGENT")
+            JsonObject(o + ("authMethod" to JsonPrimitive("SAVED_KEY"))) else el
     }
 
     override fun find(name: String): SavedConnection? = list().firstOrNull { it.name == name }
@@ -66,6 +81,4 @@ class ConnectionRepository(
 
     override fun keyPassphraseFor(keyId: String): String? =
         keys.find(keyId)?.passphrase
-
-    override fun bitwardenKeyFor(itemId: String): String? = vault.privateKey(itemId)
 }

@@ -90,12 +90,6 @@ object SshTools {
                             val pass = saved.keyPassphraseFor(keyId)?.takeIf { it.isNotBlank() }
                             SshAuth.Key(pem = pem, passphrase = pass)
                         }
-                        AuthMethod.AGENT -> SshAuth.Key(
-                            pem = conn.keyId?.let(saved::bitwardenKeyFor)
-                                ?: return ToolResult.error("vault_locked",
-                                    "Unlock Bitwarden in the SecureRemote app.",
-                                    "Bitwarden key for '$name' is unavailable (vault locked)."),
-                            passphrase = null)
                     }
 
                     // A separate client, so this neither replaces nor drops the app's live session.

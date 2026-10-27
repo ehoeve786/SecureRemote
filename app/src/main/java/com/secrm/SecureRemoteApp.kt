@@ -16,7 +16,6 @@ import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
-import com.secrm.data.BitwardenVault
 import com.secrm.data.ConnectionRepository
 import com.secrm.data.KeyRepository
 import kotlinx.serialization.json.JsonObject
@@ -30,7 +29,6 @@ class SecureRemoteApp : Application() {
     lateinit var dispatcher: CallDispatcher; private set
     lateinit var connections: ConnectionRepository; private set
     lateinit var keys: KeyRepository; private set
-    lateinit var vault: BitwardenVault; private set
     lateinit var oauth: com.secrm.core.server.http.McpOAuth; private set
     lateinit var ui: com.secrm.data.UiPrefs; private set
     /** The connected hosts, each with its own shell and file browser. */
@@ -52,15 +50,17 @@ class SecureRemoteApp : Application() {
         super.onCreate()
         config = EncryptedConfigStore(this)
         ui = com.secrm.data.UiPrefs(this)
+        // Bitwarden was removed: drop its stored login and wrapped key.
+        listOf("bw.server", "bw.client_id", "bw.client_secret", "bw.user_key", "bw.device").forEach { config.remove(it) }
+        runCatching { java.security.KeyStore.getInstance("AndroidKeyStore").apply { load(null) }.deleteEntry("secrm_bitwarden") }
         val scope = MainScope()
         tailscale = TailscaleTunnel(this, scope, targetPort = 7824).apply { resume() }
         wireguard = WireGuardTunnel(this, scope, { config.get("wg.config") },
             { it?.let { c -> config.put("wg.config", c) } ?: config.remove("wg.config") }).apply { resume() }
         audit = McpAuditLog(this)
         keys = KeyRepository(config)
-        vault = BitwardenVault(config)
         oauth = com.secrm.core.server.http.McpOAuth({ config.get("mcp.oauth") }, { config.put("mcp.oauth", it) })
-        connections = ConnectionRepository(config, keys, vault)
+        connections = ConnectionRepository(config, keys)
         dispatcher = CallDispatcher(object : CallDispatcher.AuditSink {
             override suspend fun record(
                 s: Session, tool: String, args: JsonObject, result: ToolResult, durationNanos: Long

@@ -45,12 +45,6 @@
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden"
             android:label="Plugin output"
             android:theme="@style/Theme.LiveOverlay" />
-        <!-- Fingerprint prompt to unlock Bitwarden for a plugin command, opened from a full-screen notification. -->
-        <activity
-            android:name=".plugin.UnlockActivity"
-            android:exported="false"
-            android:excludeFromRecents="true"
-            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
         <receiver
             android:name=".plugin.FireSettingReceiver"
             android:exported="true">
