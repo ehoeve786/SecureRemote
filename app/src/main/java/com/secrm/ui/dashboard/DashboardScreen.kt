@@ -346,6 +346,7 @@ private fun ConnectionFormSheet(
     var password by remember { mutableStateOf(initial?.password ?: "") }
     var keyId by remember { mutableStateOf(initial?.keyId) }
     var via by remember { mutableStateOf(initial?.via) }
+    var fallback by remember { mutableStateOf(initial?.fallbackVia) }
     var canExec by remember { mutableStateOf(initial?.allowMcpExec ?: false) }
     var canRead by remember { mutableStateOf(initial?.allowMcpRead ?: false) }
     var forgetKey by remember { mutableStateOf(false) }
@@ -455,6 +456,15 @@ private fun ConnectionFormSheet(
                     SegmentedButton(via == v, { via = v }, SegmentedButtonDefaults.itemShape(i, routes.size)) { Text(routeNames[i]) }
                 }
             }
+            if (via == null) {
+                Text("If direct fails, use", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                val fallbacks = listOf<String?>(null, "tailscale", "wireguard")
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                    fallbacks.forEachIndexed { i, v ->
+                        SegmentedButton(fallback == v, { fallback = v }, SegmentedButtonDefaults.itemShape(i, fallbacks.size)) { Text(routeNames[i]) }
+                    }
+                }
+            }
 
             Text("MCP exposure", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
             ListItem(
@@ -490,6 +500,7 @@ private fun ConnectionFormSheet(
                         password = if (authMethod == AuthMethod.PASSWORD) password else "",
                         keyId = if (authMethod != AuthMethod.PASSWORD) keyId else null,
                         via = via,
+                        fallbackVia = if (via == null) fallback else null,
                         // Kept only for the same address: a new address is a new host and needs its key approved again.
                         hostKey = if (forgetKey || initial == null || initial.host != host.trim() || initial.port != (portNum ?: 22) || initial.via != via) null else initial.hostKey,
                         allowMcpExec = canExec,

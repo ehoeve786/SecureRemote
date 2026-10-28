@@ -16,6 +16,11 @@ data class SavedConnection(
     val keyId: String? = null,
     /** Private network to route through ("tailscale" or "wireguard"), or null for direct. */
     val via: String? = null,
+    /**
+     * Tried when a direct connection (via == null) cannot reach the host: the private network to route through.
+     * Lets one saved host work both on the home LAN and away from it.
+     */
+    val fallbackVia: String? = null,
     /** Host key (base64) trusted on first connect; also how the device is found if its IP changes. */
     val hostKey: String? = null,
     /** Opt-in: a connection is not reachable over MCP until its owner enables it. */
@@ -51,9 +56,23 @@ suspend fun SshClientManager.connectSaved(
     allowRediscover: Boolean = true,
     approvedKey: String? = null,
 ): Boolean {
-    fun cfg(host: String, key: String) = SshConfig(host = host, port = conn.port, username = conn.user, auth = auth, via = conn.via, hostKey = key, name = conn.name)
+    if (connectOn(conn, conn.via, auth, saved, allowRediscover, approvedKey)) return true
+    // Direct failed: a host with a fallback network is tried through it, once. The saved record keeps its own route.
+    val fallback = conn.fallbackVia?.takeIf { conn.via == null } ?: return false
+    return connectOn(conn, fallback, auth, saved, allowRediscover = false, approvedKey = approvedKey)
+}
+
+private suspend fun SshClientManager.connectOn(
+    conn: SavedConnection,
+    via: String?,
+    auth: SshAuth,
+    saved: SavedConnections,
+    allowRediscover: Boolean,
+    approvedKey: String?,
+): Boolean {
+    fun cfg(host: String, key: String) = SshConfig(host = host, port = conn.port, username = conn.user, auth = auth, via = via, hostKey = key, name = conn.name)
     val pinned = conn.hostKey ?: run {
-        val seen = scanHostKey(conn.host, conn.port, conn.via) ?: return false
+        val seen = scanHostKey(conn.host, conn.port, via) ?: return false
         if (seen != approvedKey) return false
         seen
     }
@@ -61,7 +80,7 @@ suspend fun SshClientManager.connectSaved(
         if (conn.hostKey == null) saved.save(conn.copy(hostKey = pinned))
         return true
     }
-    val moved = (if (allowRediscover && conn.via == null) rediscover(conn.host, conn.port, pinned) else null)
+    val moved = (if (allowRediscover && via == null) rediscover(conn.host, conn.port, pinned) else null)
         ?: return false
     saved.save(conn.copy(host = moved))
     return connect(cfg(moved, pinned))
