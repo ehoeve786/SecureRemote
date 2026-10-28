@@ -28,6 +28,7 @@ import com.secrm.design.*
 /** Terminal tab: a live SSH shell per connected host, swipe between them. Each shell survives tab switches. */
 @Composable
 fun TerminalScreen(app: SecureRemoteApp, onOpenHosts: () -> Unit, onOpenFiles: () -> Unit) {
+    var showSnippets by remember { mutableStateOf(false) }
     val hosts by app.sessions.connected.collectAsState()
     if (hosts.isEmpty()) {
         com.secrm.ui.common.StateMessage(
@@ -59,12 +60,14 @@ private fun TerminalPage(host: HostSession, onOpenFiles: () -> Unit) {
             Text(host.name, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f).padding(horizontal = Space.sm))
+            TextButton({ showSnippets = true }) { Text("Snippets") }
             TextButton({ selecting = bridge.transcript() }) { Text("Select") }
             TextButton({
                 (ctx.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager)
                     .setPrimaryClip(android.content.ClipData.newPlainText("command output", bridge.lastOutput()))
             }) { Text("Copy") }
         } }
+        if (showSnippets) SnippetSheet(app, onInsert = { bridge.send(it); showSnippets = false }, onDismiss = { showSnippets = false })
         // The terminal itself is always dark, whatever the app theme.
         Box(Modifier.weight(1f).background(androidx.compose.ui.graphics.Color.Black)) {
             TerminalSurface(bridge = bridge, onReady = { ready = it }, modifier = Modifier.fillMaxSize())
