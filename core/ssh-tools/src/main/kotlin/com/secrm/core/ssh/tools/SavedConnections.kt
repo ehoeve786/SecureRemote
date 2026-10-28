@@ -56,10 +56,26 @@ suspend fun SshClientManager.connectSaved(
     allowRediscover: Boolean = true,
     approvedKey: String? = null,
 ): Boolean {
+    val fallback = conn.fallbackVia?.takeIf { conn.via == null }
+    // Off the host's own network, the fallback route is tried first: a direct attempt there would only time out.
+    if (fallback != null && !onLocalNetwork(conn.host)) {
+        if (connectOn(conn, fallback, auth, saved, allowRediscover = false, approvedKey = approvedKey)) return true
+        return connectOn(conn, conn.via, auth, saved, allowRediscover, approvedKey)
+    }
     if (connectOn(conn, conn.via, auth, saved, allowRediscover, approvedKey)) return true
     // Direct failed: a host with a fallback network is tried through it, once. The saved record keeps its own route.
-    val fallback = conn.fallbackVia?.takeIf { conn.via == null } ?: return false
-    return connectOn(conn, fallback, auth, saved, allowRediscover = false, approvedKey = approvedKey)
+    return fallback != null && connectOn(conn, fallback, auth, saved, allowRediscover = false, approvedKey = approvedKey)
+}
+
+/** Whether this phone has an IPv4 address on the same /24 as [host]. Hostnames and other networks count as not local. */
+internal fun onLocalNetwork(host: String): Boolean {
+    val target = host.split('.').map { it.toIntOrNull() ?: return false }
+    if (target.size != 4) return false
+    return java.net.NetworkInterface.getNetworkInterfaces()?.toList().orEmpty()
+        .filter { runCatching { it.isUp && !it.isLoopback }.getOrDefault(false) }
+        .flatMap { it.inetAddresses.toList() }
+        .filterIsInstance<java.net.Inet4Address>()
+        .any { a -> a.address.take(3).map { it.toInt() and 0xff } == target.take(3) }
 }
 
 private suspend fun SshClientManager.connectOn(

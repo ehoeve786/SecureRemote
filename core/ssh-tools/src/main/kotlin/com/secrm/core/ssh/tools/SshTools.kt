@@ -261,7 +261,10 @@ object SshTools {
             } catch (t: Exception) {
                 ToolResult.error("exec_failed", "Retry or shorten command.", t.message ?: "exec failed")
             }
-        } ?: ToolResult.error("connect_failed", "Check host reachability and credentials.",
+        } ?: if (pool.hostKeyChanged(conn.name)) ToolResult.error("host_key_changed",
+            "The server's host key changed. The owner must trust the new key in the app before MCP can connect.",
+            "Host key for '${conn.name}' has changed.")
+        else ToolResult.error("connect_failed", "Check host reachability and credentials.",
             "SSH connect failed to ${conn.host}:${conn.port}")
     } catch (d: Denied) {
         d.result

@@ -2,12 +2,14 @@ package com.secrm.core.ssh.tools
 
 import com.secrm.core.ssh.SshAuth
 import com.secrm.core.ssh.SshClientManager
+import com.secrm.core.ssh.SshState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * One live SSH session per saved connection, shared by MCP calls so a burst of calls pays the
@@ -29,6 +31,11 @@ class McpSessionPool(
 
     private val lock = Mutex()
     private val entries = HashMap<String, Entry>()
+    /** Connection name to whether its last connect failed because the host key changed. */
+    private val keyChanged = ConcurrentHashMap<String, Boolean>()
+
+    /** True if the last connect to [name] was refused because its host key changed. */
+    fun hostKeyChanged(name: String): Boolean = keyChanged[name] == true
 
     /** Runs [block] on a live session for [conn], connecting first if needed. Null if the connect fails. */
     suspend fun <T> use(conn: SavedConnection, auth: SshAuth, block: suspend (SshClientManager) -> T): T? {
@@ -56,9 +63,11 @@ class McpSessionPool(
         }
         val client = newClient()
         if (!client.connectSaved(conn, auth, saved, allowRediscover = false)) {
+            keyChanged[conn.name] = client.state.value is SshState.HostKeyChanged
             client.shutdown()
             return null
         }
+        keyChanged.remove(conn.name)
         return Entry(conn, auth, client).also { it.users = 1; entries[conn.name] = it }
     }
 
