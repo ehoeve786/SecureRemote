@@ -285,6 +285,29 @@ private fun McpSection(app: SecureRemoteApp) {
                 }
             }
 
+            Spacer(Modifier.height(Space.md))
+            Text("Stop after no tool calls for", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(Space.xs))
+            val idleChoices = listOf(0 to "Never", 15 to "15 min", 30 to "30 min", 60 to "1 h")
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                idleChoices.forEachIndexed { i, (minutes, label) ->
+                    SegmentedButton(
+                        selected = app.mcp.idleMinutes == minutes,
+                        onClick = { app.mcp.chooseIdleMinutes(minutes) },
+                        shape = SegmentedButtonDefaults.itemShape(i, idleChoices.size),
+                    ) { Text(label) }
+                }
+            }
+            Spacer(Modifier.height(Space.sm))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Stop when the screen turns off", style = MaterialTheme.typography.bodyLarge)
+                    Text("Agents lose access until you start the server again.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Switch(app.mcp.lockOnScreenOff, app.mcp::chooseLockOnScreenOff)
+            }
+
             // claude.ai connector (OAuth via pairing code)
             val ts by app.tailscale.state.collectAsState()
             (ts as? com.secrm.core.tunnel.Tunnel.State.Up)?.takeIf { app.tailscale.public }?.let {
