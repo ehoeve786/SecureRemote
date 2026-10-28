@@ -65,6 +65,13 @@ class SftpClient(private val ssh: SshClientManager) {
             throwIfCancelled(shouldCancel)
         }
 
+    /** Like [download], but appends to [out] from byte [from]: continues a partial file from an earlier attempt. */
+    suspend fun downloadFrom(path: String, out: OutputStream, from: Long, shouldCancel: () -> Boolean = { false }, onProgress: (Long) -> Unit = {}) =
+        run {
+            it.get(path, out, monitor(shouldCancel, onProgress), ChannelSftp.RESUME, from)
+            throwIfCancelled(shouldCancel)
+        }
+
     suspend fun upload(input: InputStream, path: String, shouldCancel: () -> Boolean = { false }, onProgress: (Long) -> Unit = {}) =
         run {
             it.put(input, path, monitor(shouldCancel, onProgress), ChannelSftp.OVERWRITE)

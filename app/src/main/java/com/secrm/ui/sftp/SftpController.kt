@@ -202,20 +202,45 @@ class SftpController(
 
     // Transfers
 
+    /**
+     * Downloads into a partial file in the app cache, so a failed or cancelled download resumes from where it
+     * stopped. The partial is copied to [dest] only when complete. The partial is keyed by remote path and size,
+     * so a changed remote file starts over.
+     */
     fun download(e: SftpEntry, dest: Uri) {
         transfer(Transfer(false, e.name, 0, e.size, 1, 1)) { setProgress ->
-            val ok = try {
+            val partial = partialFile(e)
+            val resume = partial.length().takeIf { it in 1 until e.size } ?: 0L
+            if (resume == 0L) partial.delete()
+            setProgress(resume)
+            try {
                 withContext(Dispatchers.IO) {
-                    app.contentResolver.openOutputStream(dest)!!.use { client.download(e.path, it, { cancelRequested }, setProgress) }
+                    java.io.FileOutputStream(partial, resume > 0).use { out ->
+                        client.downloadFrom(e.path, out, resume, { cancelRequested }) { n -> setProgress(resume + n) }
+                    }
                 }
             } catch (t: Throwable) {
-                // Don't leave a truncated file behind after a failed download.
+                // The destination is not left behind; the partial stays for the next attempt.
                 runCatching { DocumentsContract.deleteDocument(app.contentResolver, dest) }
                 throw t
             }
-            if (cancelRequested) runCatching { DocumentsContract.deleteDocument(app.contentResolver, dest) }
-            ok
+            if (cancelRequested) {
+                runCatching { DocumentsContract.deleteDocument(app.contentResolver, dest) }
+                return@transfer
+            }
+            withContext(Dispatchers.IO) {
+                app.contentResolver.openOutputStream(dest)!!.use { out -> partial.inputStream().use { it.copyTo(out) } }
+            }
+            partial.delete()
         }
+    }
+
+    private fun partialFile(e: SftpEntry): java.io.File {
+        val dir = java.io.File(app.cacheDir, "sftp-partial").apply { mkdirs() }
+        val key = java.security.MessageDigest.getInstance("SHA-256")
+            .digest("${e.path}|${e.size}".toByteArray())
+            .joinToString("") { "%02x".format(it) }
+        return java.io.File(dir, key)
     }
 
     /** Saves files and folders (folders recursively) into the folder the user picked. */
