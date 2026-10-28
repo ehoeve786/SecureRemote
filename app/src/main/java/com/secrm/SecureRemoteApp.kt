@@ -1,6 +1,8 @@
 package com.secrm
 
 import android.app.Application
+import android.net.ConnectivityManager
+import android.net.Network
 import com.secrm.core.domain.CallDispatcher
 import com.secrm.core.domain.Session
 import com.secrm.core.domain.ToolResult
@@ -84,6 +86,22 @@ class SecureRemoteApp : Application() {
             }
         })
         SshTools.register(dispatcher, connections, newClient())
+        watchNetwork()
+    }
+
+    /** A network change can leave a tunnel that reads as Up but routes nothing; restart both once the network is back. */
+    private fun watchNetwork() {
+        var lost = false
+        getSystemService(ConnectivityManager::class.java)
+            .registerDefaultNetworkCallback(object : ConnectivityManager.NetworkCallback() {
+                override fun onLost(network: Network) { lost = true }
+                override fun onAvailable(network: Network) {
+                    if (!lost) return
+                    lost = false
+                    tailscale.restart()
+                    wireguard.restart()
+                }
+            })
     }
 
     /** Commands and secrets never reach the audit log; their length does, so the entry is still useful. */
