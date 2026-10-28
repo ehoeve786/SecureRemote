@@ -48,6 +48,10 @@ class HostSessions(private val app: SecureRemoteApp) {
     private val _clip = MutableStateFlow<Clip?>(null)
     val clip: StateFlow<Clip?> = _clip.asStateFlow()
 
+    /** A host whose key changed since it was trusted; the owner decides in [trustNewKey] or by dismissing. */
+    data class KeyChange(val conn: SavedConnection, val pinned: String, val presented: String)
+    val keyChange = MutableStateFlow<KeyChange?>(null)
+
     /** Hosts whose session is up, in the order they were opened. A host that drops leaves this list. */
     val connected: StateFlow<List<HostSession>> = all.flatMapLatest { list ->
         if (list.isEmpty()) flowOf(emptyList())
@@ -72,7 +76,12 @@ class HostSessions(private val app: SecureRemoteApp) {
         find(conn.name)?.takeIf { it.ssh.state.value is SshState.Connected }?.let { select(conn.name); return null }
         val ssh = app.newClient()
         if (!ssh.connectSaved(conn, auth, app.connections, allowRediscover = rediscover, approvedKey = approvedKey)) {
-            val why = (ssh.state.value as? SshState.Error)?.message ?: "SSH connect failed"
+            val changed = ssh.state.value as? SshState.HostKeyChanged
+            if (changed != null) keyChange.value = KeyChange(conn, changed.pinned, changed.presented)
+            val why = when (changed) {
+                null -> (ssh.state.value as? SshState.Error)?.message ?: "SSH connect failed"
+                else -> "Host key for ${conn.name} has changed"
+            }
             ssh.shutdown()
             return why
         }
@@ -81,6 +90,14 @@ class HostSessions(private val app: SecureRemoteApp) {
         select(conn.name)
         return null
     }
+
+    /** Records the presented key as the one to trust for [change]'s host. The next connect will pin to it. */
+    fun trustNewKey(change: KeyChange) {
+        app.connections.save(change.conn.copy(hostKey = change.presented))
+        keyChange.value = null
+    }
+
+    fun dismissKeyChange() { keyChange.value = null }
 
     /** The key a host without one presents, for the owner to approve before connecting. Sends no credentials. */
     suspend fun scanKey(conn: SavedConnection): String? {

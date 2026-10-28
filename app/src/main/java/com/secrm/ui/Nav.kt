@@ -18,6 +18,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.secrm.SecureRemoteApp
 import com.secrm.core.ssh.SshState
+import com.secrm.core.ssh.hostKeyFingerprint
 import com.secrm.design.Motion
 import com.secrm.design.SecrmIcons
 import com.secrm.design.StatusDot
@@ -60,6 +61,25 @@ fun SecrmNavHost(app: SecureRemoteApp) {
     val nav = rememberNavController()
     val connected = app.sessions.connected.collectAsState().value.isNotEmpty()
     val current = nav.currentBackStackEntryAsState().value?.destination?.route
+
+    // Shown over any screen: a changed host key must not go unnoticed behind a tab.
+    app.sessions.keyChange.collectAsState().value?.let { change ->
+        AlertDialog(
+            onDismissRequest = { app.sessions.dismissKeyChange() },
+            title = { Text("Host key changed") },
+            text = {
+                Text(
+                    "${change.conn.name} is presenting a different key than the one you trusted.\n\n" +
+                        "Trusted:   ${hostKeyFingerprint(change.pinned)}\n" +
+                        "Presented: ${hostKeyFingerprint(change.presented)}\n\n" +
+                        "A reinstalled server does this, and so does someone intercepting the connection. " +
+                        "Trust the new key only if you know the server changed."
+                )
+            },
+            confirmButton = { TextButton(onClick = { app.sessions.trustNewKey(change) }) { Text("Trust new key") } },
+            dismissButton = { TextButton(onClick = { app.sessions.dismissKeyChange() }) { Text("Cancel") } },
+        )
+    }
 
     Scaffold(
         // Screens inside lay themselves out against the system bars; this scaffold only adds the bar.

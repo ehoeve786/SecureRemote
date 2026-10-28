@@ -14,7 +14,13 @@ sealed interface SshState {
     data object Connecting : SshState
     data class Connected(val serverVersion: String) : SshState
     data class Error(val message: String) : SshState
+    /** The server presented a key other than the one pinned. Nothing was sent to it. */
+    data class HostKeyChanged(val pinned: String, val presented: String) : SshState
 }
+
+/** Thrown by [SshClientManager] when the server's key no longer matches the pinned one; both keys are base64. */
+class HostKeyChangedException(val pinned: String, val presented: String, cause: Throwable) :
+    Exception("Host key has changed", cause)
 
 data class SshConfig(
     val host: String,
@@ -181,7 +187,14 @@ class SshClientManager {
             s.setServerAliveInterval(15_000)
             s.setServerAliveCountMax(3)
 
-            try { s.connect(if (cfg.via != null) maxOf(cfg.connectTimeoutMs, 30_000) else cfg.connectTimeoutMs) } catch (t: Throwable) { s.disconnect(); throw t }
+            try { s.connect(if (cfg.via != null) maxOf(cfg.connectTimeoutMs, 30_000) else cfg.connectTimeoutMs) } catch (t: Throwable) {
+                val presented = s.hostKey?.key
+                s.disconnect()
+                if (presented != null && presented != pinned && t is JSchException &&
+                    t.message?.contains("has been changed", ignoreCase = true) == true
+                ) throw HostKeyChangedException(pinned, presented, t)
+                throw t
+            }
             return s
     }
 
@@ -202,7 +215,8 @@ class SshClientManager {
             true
         } catch (t: Throwable) {
             Log.e("SSH", "connect failed", t)
-            _state.value = SshState.Error(t.message ?: "SSH connect failed")
+            _state.value = if (t is HostKeyChangedException) SshState.HostKeyChanged(t.pinned, t.presented)
+                else SshState.Error(t.message ?: "SSH connect failed")
             cleanup()
             false
         }
