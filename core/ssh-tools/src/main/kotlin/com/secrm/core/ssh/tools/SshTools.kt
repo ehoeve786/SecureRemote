@@ -111,6 +111,62 @@ object SshTools {
 
         dispatcher.register(
             ToolSpec(
+                name = "ssh.forward_port",
+                description = "Forward a port on the phone's loopback to host:port as the server sees it. Lasts while the connection is kept alive.",
+                inputSchema = schema(
+                    required = listOf("connection", "local_port", "host", "port"),
+                    "connection" to field("string", CONNECTION_DOC),
+                    "local_port" to field("integer", "1024..65535; bound to 127.0.0.1 on the phone."),
+                    "host" to field("string", "Host as the server sees it, e.g. 127.0.0.1 or a LAN address."),
+                    "port" to field("integer", "Remote port, 1..65535."),
+                ),
+                annotations = ToolSpec.Annotations(destructiveHint = true, openWorldHint = true)
+            ),
+            object : ToolHandler {
+                override suspend fun call(session: Session, args: JsonObject): ToolResult {
+                    val local = args["local_port"]?.jsonPrimitive?.intOrNull
+                        ?: return missingArg("local_port")
+                    val host = args.str("host") ?: return missingArg("host")
+                    val port = args["port"]?.jsonPrimitive?.intOrNull ?: return missingArg("port")
+                    if (local !in 1024..65535) return ToolResult.error("invalid_argument",
+                        "Use a local port from 1024 to 65535.", "Local port out of range: $local")
+                    if (port !in 1..65535) return ToolResult.error("invalid_argument",
+                        "Use a remote port from 1 to 65535.", "Remote port out of range: $port")
+                    return onConnection(saved, pool, args, Need.EXEC, READ_TIMEOUT_MS) { client ->
+                        client.addLocalForward(local, host, port)
+                        ToolResult.ok(buildJsonObject {
+                            put("local", "127.0.0.1:$local")
+                            put("target", "$host:$port")
+                        }.toString())
+                    }
+                }
+            }
+        )
+
+        dispatcher.register(
+            ToolSpec(
+                name = "ssh.close_forward",
+                description = "Close a forward opened by ssh.forward_port.",
+                inputSchema = schema(
+                    required = listOf("connection", "local_port"),
+                    "connection" to field("string", CONNECTION_DOC),
+                    "local_port" to field("integer", "The local port that was forwarded."),
+                ),
+                annotations = ToolSpec.Annotations(destructiveHint = true, openWorldHint = true)
+            ),
+            object : ToolHandler {
+                override suspend fun call(session: Session, args: JsonObject): ToolResult {
+                    val local = args["local_port"]?.jsonPrimitive?.intOrNull ?: return missingArg("local_port")
+                    return onConnection(saved, pool, args, Need.EXEC, READ_TIMEOUT_MS) { client ->
+                        client.removeLocalForward(local)
+                        ToolResult.ok("Closed 127.0.0.1:$local")
+                    }
+                }
+            }
+        )
+
+        dispatcher.register(
+            ToolSpec(
                 name = "ssh.run_snippet",
                 description = "Run a saved snippet on a connection. Fill its variables with 'variables'; values are quoted, not interpreted.",
                 inputSchema = schema(

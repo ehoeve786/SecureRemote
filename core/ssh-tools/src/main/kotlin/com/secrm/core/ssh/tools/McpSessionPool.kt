@@ -71,12 +71,15 @@ class McpSessionPool(
         return Entry(conn, auth, client).also { it.users = 1; entries[conn.name] = it }
     }
 
-    /** Caller holds [lock]. */
+    /** Caller holds [lock]. A session with port forwards open is kept: closing it would close the forwards. */
     private fun scheduleReap(e: Entry) {
         e.reaper?.cancel()
         e.reaper = scope.launch {
             delay(idleMs)
-            lock.withLock { if (e.users == 0 && entries[e.conn.name] === e) evict(e) }
+            lock.withLock {
+                if (e.users != 0 || entries[e.conn.name] !== e) return@withLock
+                if (e.client.forwards.value.isEmpty()) evict(e) else scheduleReap(e)
+            }
         }
     }
 
