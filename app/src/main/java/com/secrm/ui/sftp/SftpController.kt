@@ -9,6 +9,7 @@ import com.secrm.HostSessions
 import com.secrm.core.ssh.SftpClient
 import com.secrm.core.ssh.SftpEntry
 import com.secrm.core.ssh.SshClientManager
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -38,6 +39,8 @@ data class SftpUiState(
     /** A quick change (create, rename, delete, paste) is in flight. */
     val working: String? = null,
     val transfer: Transfer? = null,
+    /** Transfers waiting behind [transfer], which run one after another. */
+    val queued: Int = 0,
     /** Paths picked in multi-select; empty when not selecting. */
     val selected: Set<String> = emptySet(),
 )
@@ -64,11 +67,15 @@ class SftpController(
     private var listing: Job? = null
     private var home: String? = null
     @Volatile private var cancelRequested = false
+    /** Transfers run one at a time, in the order they were asked for. */
+    private val jobs = Channel<suspend () -> Unit>(Channel.UNLIMITED)
 
     private val _state = MutableStateFlow(SftpUiState())
     val state: StateFlow<SftpUiState> = _state.asStateFlow()
     private val _messages = MutableSharedFlow<SftpMessage>(extraBufferCapacity = 8)
     val messages: SharedFlow<SftpMessage> = _messages.asSharedFlow()
+
+    init { scope.launch { for (job in jobs) job() } }
 
     /** Call when the screen shows: starts at the home folder for a new session, otherwise keeps what it had. */
     fun sync() {
@@ -111,6 +118,7 @@ class SftpController(
     fun delete(items: List<SftpEntry>) = change(if (items.size == 1) "Deleting ${items[0].name}" else "Deleting ${items.size} items") {
         items.forEach { client.delete(it) }
     }
+    /** Stops the running transfer and clears the waiting ones. */
     fun cancelTransfer() { cancelRequested = true }
 
     // Selection
@@ -240,9 +248,10 @@ class SftpController(
     fun upload(uris: List<Uri>) {
         val dir = _state.value.path ?: return
         // A new name for every upload: an upload never replaces a file already in the folder, and a
-        // cancelled one removes only the file it created.
-        val taken = _state.value.entries.mapTo(HashSet()) { it.name }
+        // cancelled one removes only the file it created. Read when the upload runs, not when it is queued,
+        // so an earlier queued upload's file is already counted.
         transfer(null) { _ ->
+            val taken = client.list(dir).mapTo(HashSet()) { it.name }
             uris.forEachIndexed { i, u ->
                 if (cancelRequested) return@forEachIndexed
                 val (given, size) = describe(u)
@@ -283,10 +292,15 @@ class SftpController(
 
     private fun progress(done: Long) = _state.update { s -> s.copy(transfer = s.transfer?.copy(done = done)) }
 
+    /** Queues a transfer behind any already running. Cancel stops the running one and drops the rest. */
     private fun transfer(first: Transfer?, block: suspend ((Long) -> Unit) -> Unit) {
-        if (_state.value.transfer != null) return
-        cancelRequested = false
-        scope.launch {
+        _state.update { it.copy(queued = it.queued + 1) }
+        jobs.trySend {
+            _state.update { it.copy(queued = it.queued - 1) }
+            if (cancelRequested) {
+                if (_state.value.queued == 0) cancelRequested = false
+                return@trySend
+            }
             _state.update { it.copy(transfer = first ?: Transfer(true, "", 0, 0, 1, 1)) }
             val result = runCatching { block(::progress) }
             _state.update { it.copy(transfer = null) }
@@ -296,6 +310,7 @@ class SftpController(
                 t != null -> fail(t)
                 else -> _messages.tryEmit(SftpMessage("Transfer complete"))
             }
+            if (_state.value.queued == 0) cancelRequested = false
             refresh()
         }
     }
