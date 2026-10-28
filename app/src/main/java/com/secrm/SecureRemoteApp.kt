@@ -21,7 +21,9 @@ import kotlinx.coroutines.withTimeoutOrNull
 import com.secrm.data.ConnectionRepository
 import com.secrm.data.KeyRepository
 import com.secrm.data.AgentTokens
+import com.secrm.data.JobStore
 import com.secrm.data.McpPrefs
+import com.secrm.service.JobScheduling
 import com.secrm.data.SnippetStore
 import com.secrm.service.McpServerService
 import kotlinx.serialization.json.JsonObject
@@ -40,6 +42,7 @@ class SecureRemoteApp : Application() {
     lateinit var mcp: McpPrefs; private set
     lateinit var agents: AgentTokens; private set
     lateinit var snippets: SnippetStore; private set
+    lateinit var jobs: JobStore; private set
     /** The connected hosts, each with its own shell and file browser. */
     val sessions by lazy { HostSessions(this) }
 
@@ -62,6 +65,8 @@ class SecureRemoteApp : Application() {
         mcp = McpPrefs(this)
         agents = AgentTokens(config)
         snippets = SnippetStore(config)
+        jobs = JobStore(config)
+        JobScheduling.sync(this, jobs.list().isNotEmpty())
         // Bitwarden was removed: drop its stored login and wrapped key.
         listOf("bw.server", "bw.client_id", "bw.client_secret", "bw.user_key", "bw.device").forEach { config.remove(it) }
         runCatching { java.security.KeyStore.getInstance("AndroidKeyStore").apply { load(null) }.deleteEntry("secrm_bitwarden") }

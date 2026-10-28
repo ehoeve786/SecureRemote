@@ -30,7 +30,7 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ServerControlScreen(app: SecureRemoteApp, onBack: (() -> Unit)? = null, onOpenAudit: () -> Unit = {}) {
+fun ServerControlScreen(app: SecureRemoteApp, onBack: (() -> Unit)? = null, onOpenAudit: () -> Unit = {}, onOpenJobs: () -> Unit = {}) {
     val scope = rememberCoroutineScope()
 
     Scaffold(
@@ -64,6 +64,7 @@ fun ServerControlScreen(app: SecureRemoteApp, onBack: (() -> Unit)? = null, onOp
 
             item { SectionHeader("MCP server") }
             item { McpSection(app, onOpenAudit) }
+            item { PillButton("Scheduled jobs and health checks", PillStyle.Ghost, Modifier.fillMaxWidth(), onClick = onOpenJobs) }
 
             item { SectionHeader("About") }
             item { AboutSection() }

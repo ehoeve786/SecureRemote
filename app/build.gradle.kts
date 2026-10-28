@@ -59,6 +59,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
     implementation("androidx.biometric:biometric:1.1.0")
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
     implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
 
     implementation(project(":core:design"))
