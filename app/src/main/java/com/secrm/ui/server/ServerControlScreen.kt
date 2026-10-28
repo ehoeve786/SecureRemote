@@ -30,7 +30,7 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ServerControlScreen(app: SecureRemoteApp, onBack: (() -> Unit)? = null) {
+fun ServerControlScreen(app: SecureRemoteApp, onBack: (() -> Unit)? = null, onOpenAudit: () -> Unit = {}) {
     val scope = rememberCoroutineScope()
 
     Scaffold(
@@ -63,7 +63,7 @@ fun ServerControlScreen(app: SecureRemoteApp, onBack: (() -> Unit)? = null) {
             item { WireGuardSection(app) }
 
             item { SectionHeader("MCP server") }
-            item { McpSection(app) }
+            item { McpSection(app, onOpenAudit) }
 
             item { SectionHeader("About") }
             item { AboutSection() }
@@ -254,7 +254,7 @@ private fun OnOff(st: Tunnel.State, on: () -> Unit, off: () -> Unit) =
 // ── MCP Server ────────────────────────────────────────────
 
 @Composable
-private fun McpSection(app: SecureRemoteApp) {
+private fun McpSection(app: SecureRemoteApp, onOpenAudit: () -> Unit) {
     val ctx = LocalContext.current
     val running by McpServerService.running.collectAsState()
     var expanded by remember { mutableStateOf(false) }
@@ -307,6 +307,9 @@ private fun McpSection(app: SecureRemoteApp) {
                 }
                 Switch(app.mcp.lockOnScreenOff, app.mcp::chooseLockOnScreenOff)
             }
+
+            Spacer(Modifier.height(Space.sm))
+            PillButton("View audit log", PillStyle.Ghost, Modifier.fillMaxWidth(), onClick = onOpenAudit)
 
             // claude.ai connector (OAuth via pairing code)
             val ts by app.tailscale.state.collectAsState()

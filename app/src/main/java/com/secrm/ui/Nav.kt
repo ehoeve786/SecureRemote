@@ -22,6 +22,7 @@ import com.secrm.design.Motion
 import com.secrm.design.SecrmIcons
 import com.secrm.design.StatusDot
 import com.secrm.design.ConnectionVisual
+import com.secrm.ui.audit.AuditScreen
 import com.secrm.ui.dashboard.DashboardScreen
 import com.secrm.ui.keys.KeyManagementScreen
 import com.secrm.ui.server.ServerControlScreen
@@ -34,6 +35,7 @@ object Routes {
     const val Files = "files"
     const val Keys = "keys"
     const val Settings = "settings"
+    const val Audit = "audit"
 }
 
 private data class Tab(val route: String, val label: String, val icon: ImageVector, val needsConnection: Boolean = false)
@@ -106,7 +108,8 @@ fun SecrmNavHost(app: SecureRemoteApp) {
                 )
             }
             composable(Routes.Keys) { KeyManagementScreen(app) }
-            composable(Routes.Settings) { ServerControlScreen(app) }
+            composable(Routes.Settings) { ServerControlScreen(app, onOpenAudit = { nav.navigate(Routes.Audit) }) }
+            composable(Routes.Audit) { AuditScreen(app, onBack = { nav.popBackStack() }) }
         }
     }
 }
