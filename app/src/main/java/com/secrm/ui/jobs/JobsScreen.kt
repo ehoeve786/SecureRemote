@@ -19,6 +19,14 @@ import java.util.Date
 
 private val intervals = listOf(15L to "15 min", 60L to "1 hour", 1440L to "1 day")
 
+/** Ready-made health checks: each exits non-zero when the condition fails. The owner can edit before saving. */
+private val healthChecks = listOf(
+    Triple("Disk under 90%", "test \$(df --output=pcent / | tail -1 | tr -dc 0-9) -lt 90", 60L),
+    Triple("Memory above 50 MB", "test \$(awk '/MemAvailable/{print int(\$2/1024)}' /proc/meminfo) -gt 50", 60L),
+    Triple("Load below 4", "test \$(cut -d. -f1 /proc/loadavg) -lt 4", 15L),
+    Triple("Service running", "systemctl is-active --quiet UNIT", 15L),
+)
+
 /** Scheduled commands on saved hosts. A job that exits non-zero counts as failed, which is how health checks alert. */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -64,6 +72,14 @@ fun JobsScreen(app: SecureRemoteApp, onBack: () -> Unit) {
                 Text("Health check: exit non-zero when something is wrong, e.g.\\n" +
                     "test \\$(df --output=pcent / | tail -1 | tr -dc 0-9) -lt 90",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            item {
+                Text("Health check", style = MaterialTheme.typography.bodySmall)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
+                    healthChecks.forEach { (label, cmd, minutes) ->
+                        AssistChip(onClick = { name = label; command = cmd; every = minutes }, label = { Text(label) })
+                    }
+                }
             }
             item {
                 OutlinedTextField(value = name, onValueChange = { name = it }, singleLine = true,
