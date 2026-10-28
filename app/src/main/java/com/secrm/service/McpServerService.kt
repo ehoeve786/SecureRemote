@@ -92,17 +92,31 @@ class McpServerService : Service() {
             ?: newSecret().also { app.config.mcpLocalToken = it }
 
         // Read on every request, so a rotated token takes effect without a restart.
-        val remote: (String) -> Boolean = { presented ->
+        // Names the client a remote bearer belongs to; null means it is not accepted.
+        val identify: (String) -> String? = { presented ->
             val expected = app.config.mcpBearerToken.orEmpty()
-            (expected.isNotEmpty() && MessageDigest.isEqual(presented.toByteArray(), expected.toByteArray())) ||
-                app.oauth.isValid(presented)
+            val agent = app.agents.match(presented)
+            when {
+                agent != null -> agent
+                app.oauth.isValid(presented) -> "claude.ai"
+                expected.isNotEmpty() && MessageDigest.isEqual(presented.toByteArray(), expected.toByteArray()) -> "mcp"
+                else -> null
+            }
         }
+        val remote: (String) -> Boolean = { identify(it) != null }
         val started = McpHttpServer(
             dispatcher = app.dispatcher,
             // Only this node's own public name: the tailnet suffix would admit any other node on it.
-            auth = McpAuth(7823, 7824, local, {
-                (app.tailscale.state.value as? com.secrm.core.tunnel.Tunnel.State.Up)?.name?.let { setOf(it.lowercase()) }.orEmpty()
-            }, remote),
+            auth = McpAuth(
+                localPort = 7823,
+                remotePort = 7824,
+                localToken = local,
+                remoteAllowedHosts = {
+                    (app.tailscale.state.value as? com.secrm.core.tunnel.Tunnel.State.Up)?.name?.let { setOf(it.lowercase()) }.orEmpty()
+                },
+                clientOf = identify,
+                remoteToken = remote,
+            ),
             oauth = app.oauth
         )
         try {

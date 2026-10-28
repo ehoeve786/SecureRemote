@@ -90,7 +90,8 @@ class McpHttpServer(
                     val who = java.security.MessageDigest.getInstance("SHA-256")
                         .digest(call.request.headers[HttpHeaders.Authorization].orEmpty().toByteArray())
                         .take(6).joinToString("") { "%02x".format(it) }
-                    val session = Session(id = "mcp-$who", clientLabel = "mcp")
+                    val client = auth.clientLabel(call.request.headers[HttpHeaders.Authorization]) ?: "mcp"
+                    val session = Session(id = "mcp-$who", clientLabel = client)
                     val response = McpProtocol.handle(body, session, dispatcher)
 
                     if (response == null) {

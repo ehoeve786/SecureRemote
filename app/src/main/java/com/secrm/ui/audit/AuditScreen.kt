@@ -33,7 +33,7 @@ fun AuditScreen(app: SecureRemoteApp, onBack: () -> Unit) {
 
     val shown = entries.asReversed().filter { e ->
         (!errorsOnly || e.outcome != "ok") &&
-            (query.isBlank() || listOf(e.tool, e.outcome, e.argsRedacted).any { it.contains(query, ignoreCase = true) })
+            (query.isBlank() || listOf(e.tool, e.client, e.outcome, e.argsRedacted).any { it.contains(query, ignoreCase = true) })
     }
 
     Scaffold(
@@ -82,7 +82,7 @@ fun AuditScreen(app: SecureRemoteApp, onBack: () -> Unit) {
                     Column(Modifier.padding(Space.md)) {
                         Text(e.tool, style = MaterialTheme.typography.titleSmall)
                         Text(
-                            "${e.ts.take(19).replace('T', ' ')} · ${e.outcome} · ${e.durationMs} ms",
+                            "${e.ts.take(19).replace('T', ' ')} · ${e.client.ifBlank { "unknown" }} · ${e.outcome} · ${e.durationMs} ms",
                             style = MaterialTheme.typography.bodySmall,
                             color = if (e.outcome == "ok") MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
                         )
@@ -103,5 +103,5 @@ private fun shareIntent(entries: List<AuditEntry>): Intent = Intent(Intent.ACTIO
     .putExtra(Intent.EXTRA_SUBJECT, "SecureRemote MCP audit log")
     .putExtra(
         Intent.EXTRA_TEXT,
-        entries.joinToString("\n") { "${it.ts} ${it.tool} ${it.outcome} ${it.durationMs}ms ${it.argsRedacted}" },
+        entries.joinToString("\n") { "${it.ts} ${it.client} ${it.tool} ${it.outcome} ${it.durationMs}ms ${it.argsRedacted}" },
     )

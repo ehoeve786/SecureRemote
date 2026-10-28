@@ -8,6 +8,8 @@ class McpAuth(
     private val localToken: String,
     /** Hosts the remote connector may be reached by, read per request (this node's public name). */
     private val remoteAllowedHosts: () -> Set<String>,
+    /** Names the client a remote bearer belongs to, so audit can tell agents apart. Null for an unnamed token. */
+    private val clientOf: (String) -> String? = { null },
     /** Accepts a remote bearer: the app's static token or an OAuth access token. */
     private val remoteToken: (String) -> Boolean
 ) {
@@ -53,6 +55,10 @@ class McpAuth(
             else -> Decision.Deny(401, "Unauthorized")
         }
     }
+
+    /** The client name for a bearer header, or null if it is not a named token. */
+    fun clientLabel(authorization: String?): String? =
+        authorization?.removePrefix("Bearer ")?.trim()?.let(clientOf)
 
     /** Whether the OAuth and well-known routes may answer this request: remote port and an allowed host. */
     fun hostAllowed(serverPort: Int, hostHeader: String?): Boolean {

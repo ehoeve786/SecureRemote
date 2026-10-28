@@ -311,6 +311,8 @@ private fun McpSection(app: SecureRemoteApp, onOpenAudit: () -> Unit) {
             Spacer(Modifier.height(Space.sm))
             PillButton("View audit log", PillStyle.Ghost, Modifier.fillMaxWidth(), onClick = onOpenAudit)
 
+            AgentTokensSection(app)
+
             // claude.ai connector (OAuth via pairing code)
             val ts by app.tailscale.state.collectAsState()
             (ts as? com.secrm.core.tunnel.Tunnel.State.Up)?.takeIf { app.tailscale.public }?.let {
@@ -463,3 +465,48 @@ private fun sensitiveClip(label: String, text: String): ClipData =
     ClipData.newPlainText(label, text).apply {
         description.extras = PersistableBundle().apply { putBoolean("android.content.extra.IS_SENSITIVE", true) }
     }
+
+@Composable
+private fun AgentTokensSection(app: SecureRemoteApp) {
+    var label by remember { mutableStateOf("") }
+    var issued by remember { mutableStateOf<String?>(null) }
+    var agents by remember { mutableStateOf(app.agents.list()) }
+
+    Spacer(Modifier.height(Space.md))
+    Text("Agent tokens", style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Medium)
+    Text("One token per agent. Revoking one leaves the others working.",
+        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Spacer(Modifier.height(Space.xs))
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+        OutlinedTextField(
+            value = label, onValueChange = { label = it }, singleLine = true,
+            label = { Text("Agent name") }, modifier = Modifier.weight(1f),
+        )
+        PillButton("Create", PillStyle.Primary, enabled = label.isNotBlank(), onClick = {
+            issued = app.agents.create(label)
+            label = ""
+            agents = app.agents.list()
+        })
+    }
+    issued?.let {
+        Spacer(Modifier.height(Space.xs))
+        Text("Token for the new agent (shown once)", style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        SecretOrPlaceholder(it)
+    }
+    agents.forEach { a ->
+        Spacer(Modifier.height(Space.xs))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(a.label, style = MaterialTheme.typography.bodyLarge)
+                Text(if (a.revoked) "Revoked" else "Created ${a.created}",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (!a.revoked) TextButton(onClick = {
+                app.agents.revoke(a.id)
+                agents = app.agents.list()
+            }) { Text("Revoke", color = MaterialTheme.colorScheme.error) }
+        }
+    }
+}
