@@ -9,6 +9,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.secrm.SecureRemoteApp
+import com.secrm.core.ssh.tools.fillSnippet
+import com.secrm.core.ssh.tools.placeholdersOf
 import com.secrm.data.Snippet
 import com.secrm.design.*
 
@@ -19,6 +21,9 @@ fun SnippetSheet(app: SecureRemoteApp, onInsert: (String) -> Unit, onDismiss: ()
     var snippets by remember { mutableStateOf(app.snippets.list()) }
     var name by remember { mutableStateOf("") }
     var command by remember { mutableStateOf("") }
+    // The snippet being filled in, and its variable values; null when none is picked.
+    var filling by remember { mutableStateOf<Snippet?>(null) }
+    var values by remember { mutableStateOf(mapOf<String, String>()) }
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
         LazyColumn(
@@ -26,11 +31,31 @@ fun SnippetSheet(app: SecureRemoteApp, onInsert: (String) -> Unit, onDismiss: ()
             verticalArrangement = Arrangement.spacedBy(Space.sm),
         ) {
             item { Text("Snippets", style = MaterialTheme.typography.titleLarge) }
+            filling?.let { s ->
+                item {
+                    Text(s.name, style = MaterialTheme.typography.labelLarge)
+                    placeholdersOf(s.command).forEach { v ->
+                        OutlinedTextField(value = values[v].orEmpty(), onValueChange = { values = values + (v to it) },
+                            singleLine = true, label = { Text(v) }, modifier = Modifier.fillMaxWidth())
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                        PillButton("Cancel", PillStyle.Ghost, Modifier.weight(1f), onClick = { filling = null })
+                        PillButton("Insert", PillStyle.Primary, Modifier.weight(1f), onClick = {
+                            onInsert(fillSnippet(s.command, values))
+                        })
+                    }
+                    HorizontalDivider()
+                }
+            }
             if (snippets.isEmpty()) item {
                 Text("No snippets yet. Add one below.", style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            items(snippets, key = { it.id }) { s -> SnippetRow(s, onInsert = onInsert, onDelete = {
+            items(snippets, key = { it.id }) { s -> SnippetRow(s, onInsert = { cmd ->
+                // A snippet with {variables} asks for them first; the rest are typed in directly.
+                if (placeholdersOf(s.command).isEmpty()) onInsert(cmd)
+                else { filling = s; values = emptyMap() }
+            }, onDelete = {
                 app.snippets.delete(s.id)
                 snippets = app.snippets.list()
             }) }

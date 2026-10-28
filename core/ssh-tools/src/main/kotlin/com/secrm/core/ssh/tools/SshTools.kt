@@ -24,7 +24,12 @@ object SshTools {
     /** Thrown inside [onConnection] to end a call with a specific error. */
     private class Denied(val result: ToolResult) : RuntimeException(null, null, false, false)
 
-    fun register(dispatcher: CallDispatcher, saved: SavedConnections, ssh: SshClientManager) {
+    fun register(
+        dispatcher: CallDispatcher,
+        saved: SavedConnections,
+        ssh: SshClientManager,
+        commands: () -> List<NamedCommand> = { emptyList() },
+    ) {
         val pool = McpSessionPool(CoroutineScope(Dispatchers.IO + SupervisorJob()), saved) {
             // A separate client, so this neither replaces nor drops the app's live session.
             SshClientManager().apply { proxy = ssh.proxy }
@@ -75,6 +80,59 @@ object SshTools {
                     val cmd = args.str("command")
                         ?: return missingArg("command")
                     // Clamped: a caller cannot hold a session open indefinitely.
+                    val timeout = args.long("timeout_ms", 30_000L, 1_000L..300_000L)
+                    return onConnection(saved, pool, args, Need.EXEC, timeout) { client ->
+                        ToolResult.ok(client.execOnce(cmd))
+                    }
+                }
+            }
+        )
+
+        dispatcher.register(
+            readTool(
+                name = "ssh.list_snippets",
+                description = "Saved command snippets by name, with the variables each takes. Their text is not shown.",
+                schema = schema(required = emptyList()),
+            ),
+            object : ToolHandler {
+                override suspend fun call(session: Session, args: JsonObject): ToolResult =
+                    ToolResult.ok(buildJsonObject {
+                        putJsonArray("snippets") {
+                            commands().forEach { c ->
+                                add(buildJsonObject {
+                                    put("name", c.name)
+                                    putJsonArray("variables") { placeholdersOf(c.command).forEach { add(it) } }
+                                })
+                            }
+                        }
+                    }.toString())
+            }
+        )
+
+        dispatcher.register(
+            ToolSpec(
+                name = "ssh.run_snippet",
+                description = "Run a saved snippet on a connection. Fill its variables with 'variables'; values are quoted, not interpreted.",
+                inputSchema = schema(
+                    required = listOf("connection", "snippet"),
+                    "connection" to field("string", CONNECTION_DOC),
+                    "snippet" to field("string", "Snippet name, from ssh.list_snippets."),
+                    "variables" to buildJsonObject { put("type", "object") },
+                    "timeout_ms" to field("integer", "Clamped to 1000..300000. Default 30000."),
+                ),
+                annotations = ToolSpec.Annotations(destructiveHint = true, openWorldHint = true)
+            ),
+            object : ToolHandler {
+                override suspend fun call(session: Session, args: JsonObject): ToolResult {
+                    val name = args.str("snippet") ?: return missingArg("snippet")
+                    val snippet = commands().firstOrNull { it.name == name }
+                        ?: return ToolResult.error("unknown_snippet", "Call ssh.list_snippets.", "No snippet named $name")
+                    val values = (args["variables"] as? JsonObject)
+                        ?.mapValues { it.value.jsonPrimitive.contentOrNull.orEmpty() }.orEmpty()
+                    val missing = placeholdersOf(snippet.command) - values.keys
+                    if (missing.isNotEmpty()) return ToolResult.error("missing_variable",
+                        "Pass every variable listed by ssh.list_snippets.", "Missing: ${missing.joinToString()}")
+                    val cmd = fillSnippet(snippet.command, values)
                     val timeout = args.long("timeout_ms", 30_000L, 1_000L..300_000L)
                     return onConnection(saved, pool, args, Need.EXEC, timeout) { client ->
                         ToolResult.ok(client.execOnce(cmd))

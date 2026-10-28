@@ -10,6 +10,7 @@ import com.secrm.core.mcp.AuditEntry
 import com.secrm.core.mcp.McpAuditLog
 import com.secrm.core.security.EncryptedConfigStore
 import com.secrm.core.ssh.SshClientManager
+import com.secrm.core.ssh.tools.NamedCommand
 import com.secrm.core.ssh.tools.SshTools
 import com.secrm.core.tunnel.TailscaleTunnel
 import com.secrm.core.tunnel.WireGuardTunnel
@@ -93,7 +94,9 @@ class SecureRemoteApp : Application() {
                 McpServerService.noteActivity()
             }
         })
-        SshTools.register(dispatcher, connections, newClient())
+        SshTools.register(dispatcher, connections, newClient()) {
+            snippets.list().map { NamedCommand(it.name, it.command) }
+        }
         watchNetwork()
     }
 
