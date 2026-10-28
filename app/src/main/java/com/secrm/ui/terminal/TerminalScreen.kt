@@ -28,8 +28,6 @@ import com.secrm.design.*
 /** Terminal tab: a live SSH shell per connected host, swipe between them. Each shell survives tab switches. */
 @Composable
 fun TerminalScreen(app: SecureRemoteApp, onOpenHosts: () -> Unit, onOpenFiles: () -> Unit) {
-    var showSnippets by remember { mutableStateOf(false) }
-    var showPorts by remember { mutableStateOf(false) }
     val hosts by app.sessions.connected.collectAsState()
     if (hosts.isEmpty()) {
         com.secrm.ui.common.StateMessage(
@@ -39,12 +37,14 @@ fun TerminalScreen(app: SecureRemoteApp, onOpenHosts: () -> Unit, onOpenFiles: (
         )
         return
     }
-    HostPager(app, hosts) { host -> TerminalPage(host, onOpenFiles) }
+    HostPager(app, hosts) { host -> TerminalPage(app, host, onOpenFiles) }
 }
 
 @Composable
-private fun TerminalPage(host: HostSession, onOpenFiles: () -> Unit) {
+private fun TerminalPage(app: SecureRemoteApp, host: HostSession, onOpenFiles: () -> Unit) {
     val bridge = host.terminal() ?: return
+    var showSnippets by remember { mutableStateOf(false) }
+    var showPorts by remember { mutableStateOf(false) }
     var ready by remember(bridge) { mutableStateOf<Boolean?>(null) }
     var selecting by remember { mutableStateOf<String?>(null) }
     selecting?.let { TranscriptSelector(it) { selecting = null } }
