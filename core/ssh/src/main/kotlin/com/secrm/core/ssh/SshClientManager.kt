@@ -81,6 +81,23 @@ class SshClientManager {
     /** Saved-connection name of the live session (set before the state turns Connected). */
     @Volatile var connectedName: String? = null; private set
 
+    /** Local forwards open on the live session: local port to "host:port". Ends with the session. */
+    private val _forwards = MutableStateFlow<Map<Int, String>>(emptyMap())
+    val forwards: StateFlow<Map<Int, String>> = _forwards.asStateFlow()
+
+    /** Forwards [localPort] on this phone's loopback to [host]:[port] beyond the server. Throws if the port is taken. */
+    suspend fun addLocalForward(localPort: Int, host: String, port: Int) = withContext(Dispatchers.IO) {
+        val s = activeSession() ?: error("Not connected")
+        s.setPortForwardingL("127.0.0.1", localPort, host, port)
+        _forwards.update { it + (localPort to "$host:$port") }
+    }
+
+    /** Closes a forward made by [addLocalForward]. */
+    suspend fun removeLocalForward(localPort: Int) = withContext(Dispatchers.IO) {
+        runCatching { activeSession()?.delPortForwardingL(localPort) }
+        _forwards.update { it - localPort }
+    }
+
     /** `user@host` of the live session, for display. */
     @Volatile var target: String? = null; private set
 
@@ -330,6 +347,7 @@ class SshClientManager {
     private fun cleanup() {
         watchdog?.cancel(); watchdog = null
         connectedName = null
+        _forwards.value = emptyMap()
         runCatching { shell?.disconnect() }; shell = null
         runCatching { session?.disconnect() }; session = null
         synchronized(aux) { aux.forEach { runCatching { it.disconnect() } }; aux.clear() }
