@@ -246,9 +246,13 @@ object SshTools {
             "Connection '$name' has no trusted host key yet.")
 
         val auth = authFor(conn, saved)
+        val secrets = Redact.secretsOf(auth)
         pool.use(conn, auth) { client ->
             try {
-                withTimeout(timeoutMs) { block(client) }
+                withTimeout(timeoutMs) { block(client) }.let { r ->
+                    // Output goes to the agent, so it is scrubbed here, whichever tool produced it.
+                    r.copy(content = r.content.map { c -> if (c is ToolResult.Content.Text) ToolResult.Content.Text(Redact.text(c.text, secrets)) else c })
+                }
             } catch (t: TimeoutCancellationException) {
                 ToolResult.error("exec_failed", "Retry with a larger timeout_ms or a smaller request.",
                     "Timed out after $timeoutMs ms")
