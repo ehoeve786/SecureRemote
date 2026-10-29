@@ -5,8 +5,15 @@ import com.jcraft.jsch.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import java.io.ByteArrayOutputStream
+import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
+import java.net.InetAddress
+import java.net.InetSocketAddress
+import java.net.ServerSocket
+import java.net.Socket
+import java.security.SecureRandom
+import java.util.concurrent.atomic.AtomicBoolean
 import java.nio.charset.StandardCharsets
 
 sealed interface SshState {
@@ -85,17 +92,81 @@ class SshClientManager {
     private val _forwards = MutableStateFlow<Map<Int, String>>(emptyMap())
     val forwards: StateFlow<Map<Int, String>> = _forwards.asStateFlow()
 
-    /** Forwards [localPort] on this phone's loopback to [host]:[port] beyond the server. Throws if the port is taken. */
-    suspend fun addLocalForward(localPort: Int, host: String, port: Int) = withContext(Dispatchers.IO) {
+    /** A forward's listener on the phone, and the job that accepts its clients. */
+    private class Listener(val server: ServerSocket, val job: Job)
+    private val listeners = HashMap<Int, Listener>()
+    private val random = SecureRandom()
+
+    /**
+     * Forwards [localPort] on this phone's loopback to [host]:[port] beyond the server. Throws if the port is taken.
+     * Each client must send the returned token as its first line; a client that does not is dropped before any bytes are relayed.
+     */
+    suspend fun addLocalForward(localPort: Int, host: String, port: Int): String = withContext(Dispatchers.IO) {
         val s = activeSession() ?: error("Not connected")
-        s.setPortForwardingL("127.0.0.1", localPort, host, port)
+        val token = ByteArray(16).also(random::nextBytes).joinToString("") { "%02x".format(it) }
+        val server = ServerSocket()
+        try {
+            server.reuseAddress = true
+            server.bind(InetSocketAddress(InetAddress.getByName("127.0.0.1"), localPort))
+        } catch (e: IOException) {
+            server.close()
+            throw e
+        }
+        val job = scope.launch {
+            while (isActive) {
+                val client = try { server.accept() } catch (e: IOException) { break }
+                launch(Dispatchers.IO) { relay(s, client, host, port, token) }
+            }
+        }
+        synchronized(listeners) { listeners[localPort] = Listener(server, job) }
         _forwards.update { it + (localPort to "$host:$port") }
+        token
+    }
+
+    /** Serves one client: checks the token line, then copies bytes both ways through a direct-tcpip channel. */
+    private fun relay(s: Session, client: Socket, host: String, port: Int, token: String) {
+        client.use { c ->
+            c.soTimeout = 10_000
+            if (readLine(c.getInputStream(), token.length + 2) != token) return
+            c.soTimeout = 0
+            val ch = s.openChannel("direct-tcpip") as ChannelDirectTCPIP
+            ch.setHost(host)
+            ch.setPort(port)
+            ch.setOrgIPAddress("127.0.0.1")
+            ch.setOrgPort(c.localPort)
+            ch.connect(10_000)
+            try {
+                val up = Thread { runCatching { c.getInputStream().copyTo(ch.outputStream) } }.apply { isDaemon = true; start() }
+                runCatching { ch.inputStream.copyTo(c.getOutputStream()) }
+                ch.disconnect()
+                c.close()
+                up.join(1_000)
+            } finally {
+                ch.disconnect()
+            }
+        }
+    }
+
+    /** One line of at most [max] bytes, without its line ending. */
+    private fun readLine(input: InputStream, max: Int): String {
+        val sb = StringBuilder()
+        while (sb.length < max) {
+            val b = input.read()
+            if (b < 0 || b == '\n'.code) break
+            sb.append(b.toChar())
+        }
+        return sb.toString().trimEnd('\r')
     }
 
     /** Closes a forward made by [addLocalForward]. */
     suspend fun removeLocalForward(localPort: Int) = withContext(Dispatchers.IO) {
-        runCatching { activeSession()?.delPortForwardingL(localPort) }
+        synchronized(listeners) { listeners.remove(localPort) }?.let { closeListener(it) }
         _forwards.update { it - localPort }
+    }
+
+    private fun closeListener(l: Listener) {
+        l.job.cancel()
+        runCatching { l.server.close() }
     }
 
     /** `user@host` of the live session, for display. */
@@ -293,6 +364,7 @@ class SshClientManager {
         watchOut: OutputStream? = null,
         watchErr: OutputStream? = null,
         maxBytes: Int = 1 shl 20,
+        pty: Boolean = false,
     ): ExecResult = withContext(Dispatchers.IO) {
         val s = session ?: error("No active SSH session")
         val ch = s.openChannel("exec") as com.jcraft.jsch.ChannelExec
@@ -300,17 +372,23 @@ class SshClientManager {
         val err = CappedBuffer(maxBytes)
         coroutineScope {
             // Cancelling the caller runs this watcher, which disconnects the channel and unblocks the read below.
+            // With a pty, an interrupted command is sent ^C first so it stops, not only its connection.
+            val done = AtomicBoolean(false)
             val watcher = launch(start = CoroutineStart.UNDISPATCHED) {
-                try { awaitCancellation() } finally { ch.disconnect() }
+                try { awaitCancellation() } finally {
+                    if (pty && !done.get()) runCatching { ch.outputStream.write(0x03); ch.outputStream.flush() }
+                    ch.disconnect()
+                }
             }
             try {
+                ch.setPty(pty)
                 ch.setCommand(command)
                 ch.setErrStream(tee(err, watchErr))
                 // Take the stream before connecting, or JSch drops the command's first output.
                 val input = ch.inputStream
                 ch.connect(10_000)
                 input.copyTo(tee(out, watchOut))
-            } finally { watcher.cancel(); ch.disconnect() }
+            } finally { done.set(true); watcher.cancel(); ch.disconnect() }
         }
         ExecResult(out.text(), err.text(), ch.exitStatus)
     }
@@ -348,6 +426,7 @@ class SshClientManager {
         watchdog?.cancel(); watchdog = null
         connectedName = null
         _forwards.value = emptyMap()
+        synchronized(listeners) { listeners.values.forEach { closeListener(it) }; listeners.clear() }
         runCatching { shell?.disconnect() }; shell = null
         runCatching { session?.disconnect() }; session = null
         synchronized(aux) { aux.forEach { runCatching { it.disconnect() } }; aux.clear() }

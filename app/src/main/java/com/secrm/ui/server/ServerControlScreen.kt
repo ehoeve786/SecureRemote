@@ -433,6 +433,13 @@ private fun AboutSection() {
                 "Local-first. No telemetry. Credentials stored in Android Keystore.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
             )
+            Spacer(Modifier.height(Space.sm))
+            // Accessibility services that are switched on can read the whole terminal screen, secrets included.
+            Text(
+                "Enabled accessibility services can read everything the terminal shows, passwords included. " +
+                    "Turn them off, or keep secrets out of the terminal, if that matters.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+            )
         }
     }
 }
