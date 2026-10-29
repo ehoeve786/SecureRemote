@@ -240,7 +240,7 @@ class SftpController(
     private fun partialFile(e: SftpEntry): java.io.File {
         val dir = java.io.File(app.cacheDir, "sftp-partial").apply { mkdirs() }
         val key = java.security.MessageDigest.getInstance("SHA-256")
-            .digest("${e.path}|${e.size}".toByteArray())
+            .digest("${e.path}|${e.size}|${e.mtime}".toByteArray())
             .joinToString("") { "%02x".format(it) }
         return java.io.File(dir, key)
     }

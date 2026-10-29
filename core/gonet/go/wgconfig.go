@@ -189,7 +189,7 @@ func (c *wgConfig) uapi(resolve func(hostport string) (netip.AddrPort, error)) (
 func parseKey(s string) ([]byte, error) {
 	k, err := base64.StdEncoding.DecodeString(s)
 	if err != nil || len(k) != 32 {
-		return nil, fmt.Errorf("%q is not a WireGuard key", abbreviate(s))
+		return nil, fmt.Errorf("not a WireGuard key (%d characters)", len(s))
 	}
 	return k, nil
 }
@@ -215,10 +215,3 @@ func splitList(s string) []string {
 	return out
 }
 
-// abbreviate keeps error messages from echoing secrets in full.
-func abbreviate(s string) string {
-	if len(s) > 6 {
-		return s[:6] + "…"
-	}
-	return s
-}

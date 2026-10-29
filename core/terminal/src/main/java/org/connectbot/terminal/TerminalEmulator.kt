@@ -604,7 +604,7 @@ internal class TerminalEmulatorImpl(
 
     override fun pasteText(text: String) {
         // ESC ends a bracketed paste when it is followed by [201~, so pasted text must not carry one.
-        val safe = text.filterNot { it == '\u001b' || it == '\u009b' }
+        val safe = text.filterNot { it == '\u001b' || it.code in 0x80..0x9f }
         commands.execute {
             batchOutput {
                 terminalNative.pasteText(safe.toByteArray(Charsets.UTF_8))

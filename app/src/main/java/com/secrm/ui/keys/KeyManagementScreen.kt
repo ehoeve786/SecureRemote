@@ -204,7 +204,6 @@ private fun KeyImportSheet(
                 pem = text
                 // Auto-detect algorithm from the PEM header
                 algo = when {
-                    text.contains("BEGIN OPENSSH PRIVATE KEY") -> "openssh"
                     text.contains("BEGIN RSA PRIVATE KEY") -> "ssh-rsa"
                     text.contains("BEGIN EC PRIVATE KEY") -> "ecdsa-sha2-nistp256"
                     else -> algo
