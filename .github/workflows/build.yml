@@ -76,7 +76,13 @@ jobs:
         with: { name: app-release }
       - env: { GH_TOKEN: "${{ github.token }}" }
         run: |
-          cp *.apk SecureRemote.apk
+          # Show what the artifact contained, then copy exactly one APK. Zero or several matches fail here
+          # with a message, instead of letting cp fail with a generic error.
+          ls -la
+          apks=$(find . -maxdepth 1 -name '*.apk' -not -name SecureRemote.apk)
+          count=$(printf '%s\n' "$apks" | grep -c .)
+          [ "$count" -eq 1 ] || { echo "::error::expected one APK in the artifact, found $count"; exit 1; }
+          cp "$apks" SecureRemote.apk
           gh release view latest >/dev/null 2>&1 || gh release create latest --prerelease --title "Latest build" --notes "Newest CI build."
           gh release upload latest SecureRemote.apk --clobber
 
