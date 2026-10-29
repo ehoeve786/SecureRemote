@@ -52,6 +52,8 @@ internal class TerminalScreenState(
     private var cachedScrollbackPosition = -1
     private var cachedAutoDetect = false
     private var cachedUrlGrid = Array(0) { arrayOfNulls<String>(0) }
+    /** Rows that hold at least one auto-detected URL, so the hyperlink mask can skip the rest. */
+    private var cachedRowHasUrl = BooleanArray(0)
 
     /**
      * The current immutable terminal snapshot.
@@ -175,6 +177,8 @@ internal class TerminalScreenState(
         val cols = snapshot.cols
         return List(snapshot.rows) { row ->
             val links = getVisibleLine(row).semanticSegments.filter { it.semanticType == SemanticType.HYPERLINK }
+            // A row with no hyperlink segment and no detected URL has an all-false mask; skip the per-cell pass.
+            if (links.isEmpty() && !cachedRowHasUrl.getOrElse(row) { false }) return@List BooleanArray(cols)
             BooleanArray(cols) { col ->
                 links.firstOrNull { it.contains(col) }?.metadata != null ||
                     (row in cachedUrlGrid.indices && col in cachedUrlGrid[row].indices && cachedUrlGrid[row][col] != null)
@@ -197,6 +201,7 @@ internal class TerminalScreenState(
             }
         }
 
+        cachedRowHasUrl = BooleanArray(numRows)
         val list = mutableListOf<DetectedUrl>()
         if (!autoDetect) {
             return
@@ -233,6 +238,7 @@ internal class TerminalScreenState(
 
         for (detected in list) {
             if (detected.row in 0 until numRows) {
+                cachedRowHasUrl[detected.row] = true
                 for (col in detected.range) {
                     if (col in 0 until cols) {
                         cachedUrlGrid[detected.row][col] = detected.url
