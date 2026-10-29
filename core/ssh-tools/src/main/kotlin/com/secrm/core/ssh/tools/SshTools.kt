@@ -82,7 +82,10 @@ object SshTools {
                     // Clamped: a caller cannot hold a session open indefinitely.
                     val timeout = args.long("timeout_ms", 30_000L, 1_000L..300_000L)
                     return onConnection(saved, pool, args, Need.EXEC, timeout) { client ->
-                        ToolResult.ok(client.execOnce(cmd))
+                        // The exit status is part of the result: without it an agent cannot tell a failed command from a passing one.
+                        val r = client.execResult(cmd)
+                        val out = r.stdout + if (r.stderr.isNotBlank()) "\n[stderr]\n${r.stderr}" else ""
+                        ToolResult.ok("$out\n[exit ${r.exitCode}]")
                     }
                 }
             }

@@ -99,7 +99,7 @@ class RunCommandService : Service() {
         return try {
             // Same rule as MCP: a host's key is trusted only after the owner has connected to it in the app.
             if (conn.hostKey == null) return failure("${conn.name} has no trusted host key yet. Connect to it once in the app.")
-            val auth = authFor(conn) ?: return failure("No key or vault item for ${conn.name}")
+            val auth = authFor(conn) ?: return failure("No saved key for ${conn.name}")
             secrets = Redact.secretsOf(auth)
             if (!ssh.connectSaved(conn, auth, app.connections)) return failure("Could not connect to ${conn.host}")
             val r = ssh.execResult(s.command, live?.sink(red = false), live?.sink(red = true))

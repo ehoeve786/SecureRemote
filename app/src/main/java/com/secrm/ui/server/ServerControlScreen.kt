@@ -426,7 +426,7 @@ private fun AboutSection() {
             Text("Secure Remote Manager",
                 style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.onSurface)
-            Text("Version 1.0.0 · debug build",
+            Text("Version 1.0.0",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(Space.sm))
             Text(

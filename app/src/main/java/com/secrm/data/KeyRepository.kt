@@ -48,8 +48,9 @@ class KeyRepository(private val config: EncryptedConfigStore) {
             publicKey = publicKey.trim(),
             passphrase = passphrase
         )
-        config.put(listKey, json.encodeToString(updated))
+        // The PEM goes first: a failure in between leaves an unused PEM, never a listed key with no PEM.
         config.put(pemKey(id), privatePem)
+        config.put(listKey, json.encodeToString(updated))
         return id
     }
 

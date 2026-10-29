@@ -69,7 +69,7 @@ fun JobsScreen(app: SecureRemoteApp, onBack: () -> Unit) {
             item {
                 HorizontalDivider()
                 Text("New job", style = MaterialTheme.typography.labelLarge)
-                Text("Health check: exit non-zero when something is wrong, e.g.\\n" +
+                Text("Health check: exit non-zero when something is wrong, e.g.\n" +
                     "test \\$(df --output=pcent / | tail -1 | tr -dc 0-9) -lt 90",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
