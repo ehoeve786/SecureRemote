@@ -373,7 +373,7 @@ object SshTools {
             } catch (t: CancellationException) {
                 throw t
             } catch (t: Exception) {
-                ToolResult.error("exec_failed", "Retry or shorten command.", t.message ?: "exec failed")
+                ToolResult.error("exec_failed", "Retry or shorten command.", Redact.text(t.message ?: "exec failed", secrets))
             }
         } ?: if (pool.hostKeyChanged(conn.name)) ToolResult.error("host_key_changed",
             "The server's host key changed. The owner must trust the new key in the app before MCP can connect.",

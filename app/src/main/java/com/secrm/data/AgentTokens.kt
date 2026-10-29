@@ -26,8 +26,12 @@ class AgentTokens(private val store: EncryptedConfigStore) {
 
     @Synchronized fun list(): List<Agent> = read().map { it.agent }
 
-    /** Creates a token for [label] and returns it. It cannot be shown again. */
-    @Synchronized fun create(label: String): String {
+    /**
+     * Creates a token for [label] and returns it. It cannot be shown again. Returns null, and creates nothing,
+     * while the store cannot save: the token would be dropped and the owner would be handed a dead one.
+     */
+    @Synchronized fun create(label: String): String? {
+        if (store.keystoreLost) return null
         val token = ByteArray(32).also(random::nextBytes).joinToString("") { "%02x".format(it) }
         val id = ByteArray(6).also(random::nextBytes).joinToString("") { "%02x".format(it) }
         val clean = label.replace(Regex("[\\t\\n\\r]"), " ").trim().take(40).ifBlank { "agent" }

@@ -17,6 +17,7 @@ import com.secrm.R
 import com.secrm.SecureRemoteApp
 import com.secrm.core.ssh.SshAuth
 import com.secrm.core.ssh.tools.AuthMethod
+import com.secrm.core.ssh.tools.Redact
 import com.secrm.core.ssh.tools.SavedConnection
 import com.secrm.core.ssh.tools.connectSaved
 import kotlinx.coroutines.CoroutineScope
@@ -94,10 +95,12 @@ class RunCommandService : Service() {
         val conn = app.connections.find(s.connection) ?: return failure("No saved connection named ${s.connection}")
         // A separate client, so this doesn't replace or drop the app's live session.
         val ssh = app.newClient()
+        var secrets: List<String> = emptyList()
         return try {
             // Same rule as MCP: a host's key is trusted only after the owner has connected to it in the app.
             if (conn.hostKey == null) return failure("${conn.name} has no trusted host key yet. Connect to it once in the app.")
             val auth = authFor(conn) ?: return failure("No key or vault item for ${conn.name}")
+            secrets = Redact.secretsOf(auth)
             if (!ssh.connectSaved(conn, auth, app.connections)) return failure("Could not connect to ${conn.host}")
             val r = ssh.execResult(s.command, live?.sink(red = false), live?.sink(red = true))
             PluginProtocol.RESULT_OK to Bundle().apply {
@@ -107,7 +110,7 @@ class RunCommandService : Service() {
                 putString(PluginProtocol.VAR_ERR, PluginProtocol.RESULT_OK.toString())
             }
         } catch (t: Throwable) {
-            failure(t.message ?: "Command failed")
+            failure(Redact.text(t.message ?: "Command failed", secrets))
         } finally {
             ssh.shutdown()
         }

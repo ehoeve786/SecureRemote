@@ -484,7 +484,7 @@ private fun AgentTokensSection(app: SecureRemoteApp) {
             value = label, onValueChange = { label = it }, singleLine = true,
             label = { Text("Agent name") }, modifier = Modifier.weight(1f),
         )
-        PillButton("Create", PillStyle.Primary, enabled = label.isNotBlank(), onClick = {
+        PillButton("Create", PillStyle.Primary, enabled = label.isNotBlank() && !app.config.keystoreLost, onClick = {
             issued = app.agents.create(label)
             label = ""
             agents = app.agents.list()
