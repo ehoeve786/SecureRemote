@@ -87,6 +87,7 @@ internal class KeyboardHandler(
         },
 ) {
     private companion object {
+        const val LINE_FEED: Byte = 0x0A
         // VTermModifier values from libvterm's vterm_keycodes.h.
         const val MODIFIER_SHIFT = 1
         const val MODIFIER_ALT = 2
@@ -107,6 +108,36 @@ internal class KeyboardHandler(
 
     /** The last key event the host's interceptor saw; see [onKeyEvent]. */
     private var lastInterceptedEvent: AndroidKeyEvent? = null
+
+    /**
+     * Called with multi-line text that a remote without bracketed paste would run one line at a time. The text
+     * is not sent; the host asks the owner and calls [sendConfirmedText] if they agree.
+     */
+    var onMultilinePaste: ((String) -> Unit)? = null
+
+    /** Whether the remote has bracketed paste on. Multi-line text is held only while it is off. */
+    var bracketedPasteEnabled: () -> Boolean = { true }
+
+    private var sendingConfirmed = false
+
+    /** Sends multi-line text the owner confirmed. */
+    fun sendConfirmedText(text: String) {
+        sendingConfirmed = true
+        try {
+            onCommittedText(text)
+        } finally {
+            sendingConfirmed = false
+        }
+    }
+
+    /** True when [text] was held for confirmation instead of being sent. */
+    private fun holdMultiline(text: String): Boolean {
+        if (sendingConfirmed || '\n' !in text) return false
+        val hold = onMultilinePaste ?: return false
+        if (bracketedPasteEnabled()) return false
+        hold(text)
+        return true
+    }
 
     /**
      * Process a Compose KeyEvent and send to terminal.
@@ -348,6 +379,7 @@ internal class KeyboardHandler(
      */
     fun onTextInput(bytes: ByteArray) {
         if (bytes.isEmpty()) return
+        if (bytes.contains(LINE_FEED) && holdMultiline(bytes.toString(Charsets.UTF_8))) return
 
         val raw = bytes.toString(Charsets.UTF_8)
         val text = if (Normalizer.isNormalized(raw, Normalizer.Form.NFC)) {
@@ -377,7 +409,7 @@ internal class KeyboardHandler(
      * immediately rather than staying attached to the sticky compose buffer.
      */
     fun onCommittedText(text: String) {
-        if (text.isEmpty()) return
+        if (text.isEmpty() || holdMultiline(text)) return
 
         val normalized = if (Normalizer.isNormalized(text, Normalizer.Form.NFC)) {
             text

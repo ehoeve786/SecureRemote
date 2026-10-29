@@ -462,6 +462,7 @@ void *vterm_state_get_cbdata(VTermState *state);
 
 void  vterm_state_set_unrecognised_fallbacks(VTermState *state, const VTermStateFallbacks *fallbacks, void *user);
 void *vterm_state_get_unrecognised_fbdata(VTermState *state);
+int   vterm_state_get_bracketpaste(const VTermState *state);
 
 void vterm_state_reset(VTermState *state, int hard);
 void vterm_state_get_cursorpos(const VTermState *state, VTermPos *cursorpos);

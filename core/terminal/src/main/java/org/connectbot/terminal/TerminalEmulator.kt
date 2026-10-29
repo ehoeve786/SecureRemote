@@ -86,6 +86,9 @@ sealed interface TerminalEmulator {
     /** Queue pasted text in the same FIFO as keyboard/IME input, honoring bracketed paste. */
     fun pasteText(text: String)
 
+    /** True while the remote program has bracketed paste on, so pasted text arrives marked as a paste. */
+    val bracketedPasteEnabled: Boolean
+
     /** Policy controlling whether incoming inline image commands are accepted. */
     val inlineImages: InlineImages
 
@@ -602,6 +605,8 @@ internal class TerminalEmulatorImpl(
         Unit
     }
 
+    override val bracketedPasteEnabled: Boolean get() = terminalNative.bracketedPaste()
+
     override fun pasteText(text: String) {
         // ESC ends a bracketed paste when it is followed by [201~, so pasted text must not carry one.
         val safe = text.filterNot { it == '\u001b' || it.code in 0x80..0x9f }
@@ -1079,20 +1084,30 @@ internal class TerminalEmulatorImpl(
             }
         }
         var builder: PackedCells.Builder? = null
-        screenTransfer.fetch(terminalNative, transferRanges) { row, start, count, buffer, offset, softWrapped ->
-            val previous = currentLines[row].cells
-            if (builder == null && (previous.size != cols || !previous.matches(buffer, offset, start, count))) {
-                builder = PackedCells.Builder(cols).apply { copy(previous, 0, start) }
+        try {
+            screenTransfer.fetch(terminalNative, transferRanges) { row, start, count, buffer, offset, softWrapped ->
+                val previous = currentLines[row].cells
+                if (builder == null && (previous.size != cols || !previous.matches(buffer, offset, start, count))) {
+                    builder = PackedCells.Builder(cols).apply { copy(previous, 0, start) }
+                }
+                builder?.read(buffer, offset, count)
+                if (start + count == transferRanges[row * 2 + 1]) {
+                    val cells = builder?.let {
+                        if (start + count < cols) it.copy(previous, start + count, cols)
+                        it.build()
+                    } ?: previous
+                    updateLine(row, cells, softWrapped, damageRegions, row in movedRows)
+                    builder = null
+                }
             }
-            builder?.read(buffer, offset, count)
-            if (start + count == transferRanges[row * 2 + 1]) {
-                val cells = builder?.let {
-                    if (start + count < cols) it.copy(previous, start + count, cols)
-                    it.build()
-                } ?: previous
-                updateLine(row, cells, softWrapped, damageRegions, row in movedRows)
-                builder = null
+        } catch (e: IncompleteCellTransfer) {
+            // Keep the previous snapshot, and queue these rows again so the next change redraws them.
+            damageLocked {
+                pendingDamageRegions.addAll(damageRegions)
+                movedSegmentRows.addAll(movedRows)
+                cursorMoved = true
             }
+            return@damageLocked
         }
 
         // Apply pending semantic segments now that text content is available

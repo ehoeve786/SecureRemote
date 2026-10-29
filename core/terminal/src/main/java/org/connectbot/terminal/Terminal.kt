@@ -51,9 +51,11 @@ import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -449,8 +451,30 @@ internal fun TerminalWithAccessibility(
     val keyboardHandler = remember(terminalEmulator) {
         KeyboardHandler(QueuedTerminal(terminalEmulator), modifierManager)
     }
+    // Multi-line text typed or pasted into a remote without bracketed paste waits here for the owner's answer.
+    var pendingMultilinePaste by remember(terminalEmulator) { mutableStateOf<String?>(null) }
     SideEffect {
         keyboardHandler.onInterceptKey = currentOnInterceptKey
+        keyboardHandler.bracketedPasteEnabled = { terminalEmulator.bracketedPasteEnabled }
+        keyboardHandler.onMultilinePaste = { text -> pendingMultilinePaste = text }
+    }
+    pendingMultilinePaste?.let { text ->
+        AlertDialog(
+            onDismissRequest = { pendingMultilinePaste = null },
+            title = { Text(stringResource(R.string.terminal_multiline_paste_title)) },
+            text = { Text(stringResource(R.string.terminal_multiline_paste_message)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingMultilinePaste = null
+                    keyboardHandler.sendConfirmedText(text)
+                }) { Text(stringResource(R.string.terminal_multiline_paste_confirm)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingMultilinePaste = null }) {
+                    Text(stringResource(R.string.terminal_multiline_paste_cancel))
+                }
+            },
+        )
     }
 
     // Font size and zoom state
