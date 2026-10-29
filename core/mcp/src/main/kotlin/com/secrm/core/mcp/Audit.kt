@@ -33,7 +33,7 @@ class McpAuditLog(context: Context) {
         var s = e.argsRedacted; pats.forEach { s = it.replace(s, "[REDACTED]") }
         val line = json.encodeToString(e.copy(argsRedacted = s)) + "\n"
         lock.withLock {
-            // Keep the log bounded: the previous generation is replaced, so at most ~2 MB is kept.
+            // Keep the log bounded: the current file rotates at MAX_BYTES (1 MB) into one previous file, so at most 2 MB is kept.
             if (file.length() > MAX_BYTES) file.renameTo(rotated)
             file.appendText(line)
         }

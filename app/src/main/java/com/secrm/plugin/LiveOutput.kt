@@ -30,6 +30,9 @@ class LiveOutput : InputStream() {
 
     /** Where the command's output goes: LF becomes CRLF for the terminal, and [red] shows it in red. */
     fun sink(red: Boolean): OutputStream = object : OutputStream() {
+        /** Whether the last byte written was a CR, which may be the one before an LF in the next chunk. */
+        private var lastCr = false
+
         override fun write(b: Int) = write(byteArrayOf(b.toByte()), 0, 1)
 
         override fun write(b: ByteArray, off: Int, len: Int) {
@@ -37,9 +40,11 @@ class LiveOutput : InputStream() {
             val o = ByteArrayOutputStream(len + 16)
             if (red) o.write(RED)
             for (i in off until off + len) {
-                if (b[i] == LF && (i == 0 || b[i - 1] != CR)) o.write(CR.toInt())
+                val afterCr = if (i == off) lastCr else b[i - 1] == CR
+                if (b[i] == LF && !afterCr) o.write(CR.toInt())
                 o.write(b[i].toInt())
             }
+            lastCr = b[off + len - 1] == CR
             if (red) o.write(RESET)
             offer(o.toByteArray())
         }
