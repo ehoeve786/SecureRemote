@@ -161,7 +161,7 @@ class SftpController(
     private fun pasteFrom(clip: Clip, dir: String) {
         val source = sessions.find(clip.host)?.files
             ?: return fail(IllegalStateException("${clip.host} is no longer connected"))
-        transfer(Transfer(true, "", 0, 0, 1, clip.entries.size)) { _ ->
+        transfer(Transfer(true, clip.entries.singleOrNull()?.name ?: "${clip.entries.size} items", 0, 0, 1, clip.entries.size)) { _ ->
             withContext(Dispatchers.IO) {
                 val taken = _state.value.entries.mapTo(HashSet()) { it.name }
                 for ((i, e) in clip.entries.withIndex()) {
