@@ -7,10 +7,10 @@ import java.io.InputStream
 import java.io.OutputStream
 
 /** JSch [Proxy] over a tunnel connection opened in Go, after Tidegate's TunnelProxy. */
-class TunnelProxy(private val dial: (String, Int) -> Conn) : Proxy {
+class TunnelProxy(private val dial: (String, Int, Int) -> Conn) : Proxy {
     private var conn: Conn? = null
 
-    override fun connect(factory: SocketFactory?, host: String, port: Int, timeout: Int) { conn = dial(host, port) }
+    override fun connect(factory: SocketFactory?, host: String, port: Int, timeout: Int) { conn = dial(host, port, timeout) }
     override fun getSocket(): java.net.Socket? = null
     override fun close() { runCatching { conn?.close() } }
 

@@ -55,7 +55,7 @@ class SecureRemoteApp : Application() {
             t.start() // no-op if already running
             runBlocking { withTimeoutOrNull(30_000) { t.state.first { it is Tunnel.State.Up } } }
                 ?: error("$name isn't connected. Check Settings → Private network.")
-            com.secrm.data.TunnelProxy { host, port -> t.dial(host, port, 30_000) }
+            com.secrm.data.TunnelProxy { host, port, timeoutMs -> t.dial(host, port, if (timeoutMs > 0) timeoutMs else 30_000) }
         }
     }
 
