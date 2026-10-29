@@ -92,8 +92,9 @@ class McpToolsTest {
         assertEquals("missing_argument", r.errorCode)
     }
 
-    @Test fun forwardPortNeedsTheExecPermission() {
-        val r = call(box(exec = false), tool = "ssh.forward_port", args = buildJsonObject {
+    @Test fun forwardPortNeedsTheReadPermission() {
+        val noRead = SavedConnection(name = "box", host = "10.0.0.2", user = "me", hostKey = "1A2B", allowMcpExec = true, allowMcpRead = false)
+        val r = call(noRead, tool = "ssh.forward_port", args = buildJsonObject {
             put("connection", "box"); put("local_port", 8080); put("host", "127.0.0.1"); put("port", 22)
         })
         assertEquals("not_permitted", r.errorCode)

@@ -83,7 +83,8 @@ object SshTools {
                     val timeout = args.long("timeout_ms", 30_000L, 1_000L..300_000L)
                     return onConnection(saved, pool, args, Need.EXEC, timeout) { client ->
                         // The exit status is part of the result: without it an agent cannot tell a failed command from a passing one.
-                        val r = client.execResult(cmd)
+                        // A pty, so a timed-out command gets ^C and stops. Output then has CRLF line endings, and stderr is merged into stdout.
+                        val r = client.execResult(cmd, pty = true)
                         val out = r.stdout + if (r.stderr.isNotBlank()) "\n[stderr]\n${r.stderr}" else ""
                         ToolResult.ok("$out\n[exit ${r.exitCode}]")
                     }
@@ -137,10 +138,12 @@ object SshTools {
                         "Use a remote port from 1 to 65535.", "Remote port out of range: $port")
                     // A forward needs only read access: it runs no command on the server.
                     return onConnection(saved, pool, args, Need.READ, READ_TIMEOUT_MS) { client ->
-                        client.addLocalForward(local, host, port)
+                        val token = client.addLocalForward(local, host, port)
                         ToolResult.ok(buildJsonObject {
                             put("local", "127.0.0.1:$local")
                             put("target", "$host:$port")
+                            // Every client of this forward must send this line first, or it is dropped.
+                            put("token", token)
                         }.toString())
                     }
                 }
