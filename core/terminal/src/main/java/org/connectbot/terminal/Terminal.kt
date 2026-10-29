@@ -1972,13 +1972,7 @@ private fun TerminalRows(
     // Cross-row URL detection depends on visible contents, not cursor/sequence updates.
     val hyperlinkMasks = remember(screenState, autoDetectUrls) {
         derivedStateOf {
-            if (!autoDetectUrls) {
-                emptyList()
-            } else {
-                List(screenState.snapshot.rows) { row ->
-                    BooleanArray(screenState.snapshot.cols) { col -> screenState.getHyperlinkUrlAt(row, col, autoDetectUrls = true) != null }
-                }
-            }
+            if (!autoDetectUrls) emptyList() else screenState.hyperlinkMask()
         }
     }
 
@@ -2745,7 +2739,7 @@ private fun DrawScope.drawComposeOverlay(
     // width, however, comes from the paint that actually draws the text — fonts don't
     // always render "あ" at exactly 2 × measureText("M"), and using column math for pixels
     // makes the trailing cursor drift further past the glyphs as the buffer grows.
-    val displayText = truncateForOverlay(buffer, availableCols)
+    val displayText = truncateForOverlayCached(buffer, availableCols)
     if (displayText.isEmpty()) return
     val displayWidth = textPaint.measureText(displayText)
 
@@ -2820,6 +2814,14 @@ private fun String.visualColumnWidth(): Int {
         i += Character.charCount(cp)
     }
     return total
+}
+
+/** The last overlay trim, so a frame with the same buffer and width does not walk the text again. */
+private var overlayTrim: Triple<String, Int, String>? = null
+
+private fun truncateForOverlayCached(buffer: String, availableCols: Int): String {
+    overlayTrim?.let { (text, cols, trimmed) -> if (cols == availableCols && text == buffer) return trimmed }
+    return truncateForOverlay(buffer, availableCols).also { overlayTrim = Triple(buffer, availableCols, it) }
 }
 
 /**

@@ -161,6 +161,27 @@ internal class TerminalScreenState(
         }
     }
 
+    /**
+     * Which visible cells carry a hyperlink: OSC 8, or a plain-text URL, as [getHyperlinkUrlAt] reports
+     * with auto-detect on. Works row by row, so each row's line is fetched and its segments filtered once.
+     */
+    fun hyperlinkMask(): List<BooleanArray> {
+        if (snapshot.sequenceNumber != cachedSequenceNumber ||
+            scrollbackPosition != cachedScrollbackPosition ||
+            !cachedAutoDetect
+        ) {
+            rebuildUrlCache(autoDetect = true)
+        }
+        val cols = snapshot.cols
+        return List(snapshot.rows) { row ->
+            val links = getVisibleLine(row).semanticSegments.filter { it.semanticType == SemanticType.HYPERLINK }
+            BooleanArray(cols) { col ->
+                links.firstOrNull { it.contains(col) }?.metadata != null ||
+                    (row in cachedUrlGrid.indices && col in cachedUrlGrid[row].indices && cachedUrlGrid[row][col] != null)
+            }
+        }
+    }
+
     private fun rebuildUrlCache(autoDetect: Boolean) {
         cachedSequenceNumber = snapshot.sequenceNumber
         cachedScrollbackPosition = scrollbackPosition
