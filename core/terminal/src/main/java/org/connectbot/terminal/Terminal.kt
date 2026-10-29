@@ -1386,6 +1386,7 @@ internal fun TerminalWithAccessibility(
                                         longPressJob?.cancel()
                                         gestureType = if (pagingCandidate && singleTouch &&
                                             currentOnPageGesture != null &&
+                                            !screenState.snapshot.alternateScreen &&
                                             abs(panAccumulator.y) > abs(panAccumulator.x)
                                         ) {
                                             GestureType.Page
