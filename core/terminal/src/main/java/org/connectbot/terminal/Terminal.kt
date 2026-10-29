@@ -2765,7 +2765,7 @@ private fun DrawScope.drawComposeOverlay(
     // makes the trailing cursor drift further past the glyphs as the buffer grows.
     val displayText = truncateForOverlayCached(buffer, availableCols)
     if (displayText.isEmpty()) return
-    val displayWidth = textPaint.measureText(displayText)
+    val displayWidth = measureOverlayCached(textPaint, displayText)
 
     // Draw background
     drawRect(
@@ -2838,6 +2838,14 @@ private fun String.visualColumnWidth(): Int {
         i += Character.charCount(cp)
     }
     return total
+}
+
+/** The last overlay width, so a frame with the same text and text size is not measured again. */
+private var overlayWidth: Triple<String, Float, Float>? = null
+
+private fun measureOverlayCached(paint: Paint, text: String): Float {
+    overlayWidth?.let { (t, size, width) -> if (t == text && size == paint.textSize) return width }
+    return paint.measureText(text).also { overlayWidth = Triple(text, paint.textSize, it) }
 }
 
 /** The last overlay trim, so a frame with the same buffer and width does not walk the text again. */

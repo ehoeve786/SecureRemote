@@ -139,6 +139,9 @@ internal fun AccessibilityOverlay(
                         },
                     )
                     .semantics {
+                        // Outside review mode the line's text and actions are not exposed, so an enabled service cannot read
+                        // the screen, passwords included, until the owner enters review mode.
+                        if (!isReviewMode) return@semantics
                         // Use text property for granular navigation (words/characters)
                         // Only use contentDescription for semantic segments
                         if (line.semanticSegments.isEmpty() ||
