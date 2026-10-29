@@ -100,7 +100,6 @@ import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.input.pointer.util.addPointerInputChange
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -112,7 +111,6 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -437,7 +435,7 @@ internal fun TerminalWithAccessibility(
 
     val density = LocalDensity.current
     val haptic = LocalHapticFeedback.current
-    val clipboardManager = LocalClipboardManager.current
+    val clipContext = LocalContext.current
     val scope = rememberCoroutineScope()
 
     // Track accessibility state - only enable accessibility features when needed
@@ -679,7 +677,7 @@ internal fun TerminalWithAccessibility(
     }
 
     // Selection controller - expose API for external control
-    val selectionController = remember(terminalEmulator, selectionManager, clipboardManager, screenState, textPaint, baseCharWidth) {
+    val selectionController = remember(terminalEmulator, selectionManager, clipContext, screenState, textPaint, baseCharWidth) {
         object : SelectionController {
             override val isSelectionActive: Boolean
                 get() = selectionManager.mode != SelectionMode.NONE
@@ -748,7 +746,7 @@ internal fun TerminalWithAccessibility(
             override fun copySelection(): String {
                 val text = selectionManager.getSelectedText(screenState.snapshot, screenState.scrollbackPosition)
                 if (text.isNotEmpty()) {
-                    clipboardManager.setText(AnnotatedString(text))
+                    copySensitive(clipContext, "terminal selection", text)
                     selectionManager.clearSelection()
                 }
                 return text
@@ -1750,9 +1748,10 @@ internal fun TerminalWithAccessibility(
                 )
 
                 if (!isReviewMode && keyboardEnabled) {
+                    // Off: the last lines of output would be spoken by TalkBack, and output can hold secrets.
                     LiveOutputRegion(
                         screenState = screenState,
-                        enabled = true,
+                        enabled = false,
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
@@ -1821,7 +1820,7 @@ internal fun TerminalWithAccessibility(
                             onClick = {
                                 val selectedText =
                                     selectionManager.getSelectedText(screenState.snapshot, screenState.scrollbackPosition)
-                                clipboardManager.setText(AnnotatedString(selectedText))
+                                copySensitive(clipContext, "terminal selection", selectedText)
                                 selectionManager.clearSelection()
                             },
                             modifier = Modifier.size(COPY_BUTTON_SIZE),

@@ -37,9 +37,7 @@ internal class ImagePresentation(private val handler: Handler) {
             if (previous.bitmap === bitmap && previous.drawable === drawable) return@post
             val next = Frame(bitmap, drawable)
             frame = next
-            // The replaced frame is no longer composed. Release its pixels after a short delay, so a
-            // frame already recorded for drawing finishes first, instead of waiting for GC.
-            previous.bitmap?.takeIf { it !== bitmap }?.let { old -> handler.postDelayed({ old.recycle() }, 100) }
+            // The replaced frame is not recycled: a frame recorded earlier may still be drawing it. The GC releases it.
             if (previous.drawable !== drawable) {
                 AnimatedImage.stop(previous.drawable)
                 if (frame === next && drawable != null && Build.VERSION.SDK_INT >= 28) {
