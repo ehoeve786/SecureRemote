@@ -135,7 +135,8 @@ object SshTools {
                         "Use a local port from 1024 to 65535.", "Local port out of range: $local")
                     if (port !in 1..65535) return ToolResult.error("invalid_argument",
                         "Use a remote port from 1 to 65535.", "Remote port out of range: $port")
-                    return onConnection(saved, pool, args, Need.EXEC, READ_TIMEOUT_MS) { client ->
+                    // A forward needs only read access: it runs no command on the server.
+                    return onConnection(saved, pool, args, Need.READ, READ_TIMEOUT_MS) { client ->
                         client.addLocalForward(local, host, port)
                         ToolResult.ok(buildJsonObject {
                             put("local", "127.0.0.1:$local")
