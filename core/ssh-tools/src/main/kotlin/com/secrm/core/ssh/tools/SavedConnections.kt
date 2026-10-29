@@ -72,7 +72,7 @@ suspend fun SshClientManager.connectSaved(
 }
 
 /** Records the route that worked on this network, read from the latest saved record so no other change is lost. */
-private fun rememberRoute(conn: SavedConnection, netKey: String?, route: String?, saved: SavedConnections) {
+internal fun rememberRoute(conn: SavedConnection, netKey: String?, route: String?, saved: SavedConnections) {
     if (netKey == null || conn.via != null) return
     val key = route ?: DIRECT
     val latest = saved.find(conn.name) ?: return
