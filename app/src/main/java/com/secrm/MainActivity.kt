@@ -1,6 +1,7 @@
 package com.secrm
 
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.compose.setContent
 import android.graphics.Color
 import androidx.activity.SystemBarStyle
@@ -16,6 +17,9 @@ import com.secrm.ui.SecrmNavHost
 class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Keeps tokens, keys, the audit log and terminal output out of screenshots, screen recordings and the
+        // recent-apps preview.
+        window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
         // A foreground service keeps the tailnet's network alive in the background (and serves Funnel).
         if ((application as SecureRemoteApp).tailscale.enabled) com.secrm.service.McpServerService.start(this)
         val app = application as SecureRemoteApp

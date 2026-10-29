@@ -180,6 +180,8 @@ class SftpController(
 
     /** Copies [e] from [src] into [dir] as [name], folders recursively, via a temporary file on the phone. */
     private suspend fun importEntry(src: SftpClient, e: SftpEntry, dir: String, name: String) {
+        // A link to a folder is skipped: following it can loop back into the tree being copied.
+        if (e.isDir && e.isLink) return
         val to = SftpClient.join(dir, name)
         if (e.isDir) {
             runCatching { client.mkdir(to) } // already there is fine
@@ -254,6 +256,8 @@ class SftpController(
     }
 
     private suspend fun saveTo(e: SftpEntry, parent: DocumentFile, setProgress: (Long) -> Unit) {
+        // A link to a folder is skipped: following it can loop back into the tree being saved.
+        if (e.isDir && e.isLink) return
         if (e.isDir) {
             val d = parent.findFile(e.name)?.takeIf { it.isDirectory } ?: parent.createDirectory(e.name)
                 ?: error("Couldn't create ${e.name}")
@@ -280,7 +284,7 @@ class SftpController(
             uris.forEachIndexed { i, u ->
                 if (cancelRequested) return@forEachIndexed
                 val (given, size) = describe(u)
-                val name = uniqueName(given, taken).also { taken += it }
+                val name = uniqueName(safeName(given), taken).also { taken += it }
                 _state.update { it.copy(transfer = Transfer(true, name, 0, size, i + 1, uris.size)) }
                 val part = SftpClient.join(dir, partialName(u, size))
                 val offset = client.sizeOf(part).takeIf { it in 1 until size } ?: 0L
@@ -321,7 +325,7 @@ class SftpController(
         val root = DocumentFile.fromTreeUri(app, tree) ?: return fail(IllegalStateException("Can't read that folder"))
         val given = root.name ?: return fail(IllegalStateException("Can't read that folder"))
         // The folder gets a new name too, so its files cannot be mixed into one already there.
-        val name = uniqueName(given, _state.value.entries.mapTo(HashSet()) { it.name })
+        val name = uniqueName(safeName(given), _state.value.entries.mapTo(HashSet()) { it.name })
         transfer(Transfer(true, name, 0, 0, 1, 1)) { _ ->
             withContext(Dispatchers.IO) { putTree(root, dir, name) }
         }
@@ -331,7 +335,7 @@ class SftpController(
         val remote = SftpClient.join(dir, name)
         if (src.isDirectory) {
             runCatching { client.mkdir(remote) } // already there is fine
-            for (c in src.listFiles()) { if (cancelRequested) return; putTree(c, remote, c.name ?: continue) }
+            for (c in src.listFiles()) { if (cancelRequested) return; putTree(c, remote, safeName(c.name ?: continue)) }
         } else {
             _state.update { it.copy(transfer = it.transfer?.copy(name = name, done = 0, total = src.length())) }
             app.contentResolver.openInputStream(src.uri)!!.use { client.upload(it, remote, { cancelRequested }) { n -> progress(n) } }
@@ -389,6 +393,16 @@ class SftpController(
         var candidate = "$stem copy$ext"
         while (candidate in taken) { n++; candidate = "$stem copy $n$ext" }
         return candidate
+    }
+
+    /**
+     * A name supplied by a picker or a content provider, reduced to one path component: separators and NULs
+     * become underscores, and "." and ".." (or an empty name) fall back to a plain name. The upload then
+     * stays inside the folder the user is browsing.
+     */
+    private fun safeName(name: String): String {
+        val cleaned = name.replace('/', '_').replace('\u0000', '_').trim()
+        return if (cleaned.isEmpty() || cleaned == "." || cleaned == "..") "upload" else cleaned
     }
 
     private fun describe(u: Uri): Pair<String, Long> {

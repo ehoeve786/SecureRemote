@@ -42,6 +42,8 @@ class LiveTerminalActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Command output is shown here, so keep it out of screenshots and the recent-apps preview.
+        window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
         // Gone once taken: a command that already finished, or a screen already open, has nothing to show.
         val output = LiveCommands.take(intent.getStringExtra(EXTRA_ID).orEmpty()) ?: run { finish(); return }
         val title = intent.getStringExtra(EXTRA_TITLE).orEmpty()
