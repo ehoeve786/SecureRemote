@@ -413,6 +413,7 @@ private fun NameDialog(title: String, initial: String, confirm: String, siblings
     val problem = when {
         name.isEmpty() -> null
         '/' in name -> "A name can't contain /"
+        name == "." || name == ".." -> "That name isn't allowed"
         siblings.any { it.name == name } -> "Something with this name already exists"
         else -> null
     }

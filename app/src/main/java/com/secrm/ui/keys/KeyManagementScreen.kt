@@ -281,3 +281,7 @@ private fun KeyImportSheet(
 
 /** Real keys are a few kilobytes; anything larger is not a key file. */
 private const val MAX_KEY_BYTES = 64 * 1024
+
+/** A PEM or OpenSSH private key block. Anything else is refused at import, not at connect. */
+private fun isPrivateKeyPem(text: String) =
+    Regex("-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\\s\\S]*-----END [A-Z0-9 ]*PRIVATE KEY-----").containsMatchIn(text)

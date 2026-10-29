@@ -172,7 +172,7 @@ class SshClientManager {
                         null,
                         a.pem.toByteArray(StandardCharsets.US_ASCII),
                         null,
-                        a.passphrase?.toByteArray(StandardCharsets.US_ASCII)
+                        a.passphrase?.toByteArray(StandardCharsets.UTF_8)
                     )
                 }
                 is SshAuth.Password -> { /* handled below */ }
