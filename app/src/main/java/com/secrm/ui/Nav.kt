@@ -124,7 +124,9 @@ fun SecrmNavHost(app: SecureRemoteApp) {
                     app,
                     onOpenHosts = { nav.goTab(Routes.Hosts) },
                     onOpenTerminal = { dir ->
-                        app.sessions.current.value?.terminal()?.send("cd '" + dir.replace("'", "'\\''") + "'\r")
+                        // Control characters would be sent to the shell as keystrokes, so they are dropped from the path.
+                        val safe = dir.filter { it >= ' ' && it != '\u007f' }
+                        app.sessions.current.value?.terminal()?.send("cd '" + safe.replace("'", "'\\''") + "'\r")
                         nav.goTab(Routes.Terminal)
                     },
                 )
