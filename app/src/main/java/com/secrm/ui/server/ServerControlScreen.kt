@@ -11,6 +11,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
 import androidx.compose.material3.*
+import kotlinx.coroutines.delay
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -490,6 +491,13 @@ private fun AgentTokensSection(app: SecureRemoteApp) {
             label = ""
             agents = app.agents.list()
         })
+    }
+    // The token stays on screen for a minute, then it is cleared from memory too.
+    LaunchedEffect(issued) {
+        if (issued != null) {
+            delay(60_000)
+            issued = null
+        }
     }
     issued?.let {
         Spacer(Modifier.height(Space.xs))

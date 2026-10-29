@@ -16,6 +16,23 @@ object SshTools {
     /** The read-only tools run fixed, short commands, so they get a short leash. */
     private const val READ_TIMEOUT_MS = 15_000L
     private const val MAX_READ_BYTES = 1 shl 20
+    /** [len] bytes, less a trailing UTF-8 character that the cut would split. */
+    private fun utf8SafeLength(b: ByteArray, len: Int): Int {
+        var start = len
+        var continuation = 0
+        while (start > 0 && continuation < 3 && (b[start - 1].toInt() and 0xC0) == 0x80) { start--; continuation++ }
+        if (start == 0) return len
+        val lead = b[start - 1].toInt() and 0xFF
+        val need = when {
+            lead and 0x80 == 0 -> 1
+            lead and 0xE0 == 0xC0 -> 2
+            lead and 0xF0 == 0xE0 -> 3
+            lead and 0xF8 == 0xF0 -> 4
+            else -> 1
+        }
+        return if (start - 1 + need <= len) len else start - 1
+    }
+
     private val SERVICE_NAME = Regex("[A-Za-z0-9@._:][A-Za-z0-9@._:-]{0,127}")
 
     /** Which owner flag a tool needs: `allowMcpExec` for running commands, `allowMcpRead` for fixed read-only queries. */
@@ -225,7 +242,7 @@ object SshTools {
                         if (r.exitCode != 0) return@onConnection commandFailed(r)
                         val bytes = r.stdout.toByteArray(Charsets.UTF_8)
                         val truncated = bytes.size > max
-                        val content = if (truncated) bytes.copyOf(max).decodeToString() else r.stdout
+                        val content = if (truncated) bytes.copyOf(utf8SafeLength(bytes, max)).decodeToString() else r.stdout
                         ToolResult.ok(buildJsonObject {
                             put("path", path)
                             put("truncated", truncated)

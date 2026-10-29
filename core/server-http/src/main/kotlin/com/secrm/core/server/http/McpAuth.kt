@@ -48,7 +48,7 @@ class McpAuth(
             if (!originOk) return Decision.Deny(403, "Origin not allowed")
         }
 
-        val token = authorization?.removePrefix("Bearer ")?.trim()
+        val token = bearerOf(authorization)
         return when {
             isLocal && token != null && MessageDigest.isEqual(token.toByteArray(), localToken.toByteArray()) -> Decision.Allow
             isRemote && token != null && remoteToken(token) -> Decision.Allow
@@ -56,9 +56,13 @@ class McpAuth(
         }
     }
 
+    /** The token in an Authorization header. The scheme name is case-insensitive, so "bearer" is accepted too. */
+    private fun bearerOf(authorization: String?): String? =
+        authorization?.let { if (it.regionMatches(0, "Bearer ", 0, 7, ignoreCase = true)) it.substring(7) else it }?.trim()
+
     /** The client name for a bearer header, or null if it is not a named token. */
     fun clientLabel(authorization: String?): String? =
-        authorization?.removePrefix("Bearer ")?.trim()?.let(clientOf)
+        bearerOf(authorization)?.let(clientOf)
 
     /** Whether the OAuth and well-known routes may answer this request: remote port and an allowed host. */
     fun hostAllowed(serverPort: Int, hostHeader: String?): Boolean {
