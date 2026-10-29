@@ -21,6 +21,8 @@ data class SavedConnection(
      * Lets one saved host work both on the home LAN and away from it.
      */
     val fallbackVia: String? = null,
+    /** The route that last worked on each private network, keyed by its /24 (see [currentNetworkKey]); "direct" or a route name. */
+    val routeByNetwork: Map<String, String> = emptyMap(),
     /** Host key (base64) trusted on first connect; also how the device is found if its IP changes. */
     val hostKey: String? = null,
     /** Opt-in: a connection is not reachable over MCP until its owner enables it. */
@@ -57,25 +59,25 @@ suspend fun SshClientManager.connectSaved(
     approvedKey: String? = null,
 ): Boolean {
     val fallback = conn.fallbackVia?.takeIf { conn.via == null }
-    // Off the host's own network, the fallback route is tried first: a direct attempt there would only time out.
-    if (fallback != null && !onLocalNetwork(conn.host)) {
-        if (connectOn(conn, fallback, auth, saved, allowRediscover = false, approvedKey = approvedKey)) return true
-        return connectOn(conn, conn.via, auth, saved, allowRediscover, approvedKey)
+    val netKey = currentNetworkKey()
+    val routes = orderRoutes(conn.via, fallback, onLocalNetwork(conn.host), netKey?.let { conn.routeByNetwork[it] })
+    for (route in routes) {
+        // Only the direct attempt may search for a moved host; a tunnel attempt never probes the network.
+        if (connectOn(conn, route, auth, saved, allowRediscover && route == null, approvedKey)) {
+            rememberRoute(conn, netKey, route, saved)
+            return true
+        }
     }
-    if (connectOn(conn, conn.via, auth, saved, allowRediscover, approvedKey)) return true
-    // Direct failed: a host with a fallback network is tried through it, once. The saved record keeps its own route.
-    return fallback != null && connectOn(conn, fallback, auth, saved, allowRediscover = false, approvedKey = approvedKey)
+    return false
 }
 
-/** Whether this phone has an IPv4 address on the same /24 as [host]. Hostnames and other networks count as not local. */
-internal fun onLocalNetwork(host: String): Boolean {
-    val target = host.split('.').map { it.toIntOrNull() ?: return false }
-    if (target.size != 4) return false
-    return java.net.NetworkInterface.getNetworkInterfaces()?.toList().orEmpty()
-        .filter { runCatching { it.isUp && !it.isLoopback }.getOrDefault(false) }
-        .flatMap { it.inetAddresses.toList() }
-        .filterIsInstance<java.net.Inet4Address>()
-        .any { a -> a.address.take(3).map { it.toInt() and 0xff } == target.take(3) }
+/** Records the route that worked on this network, read from the latest saved record so no other change is lost. */
+private fun rememberRoute(conn: SavedConnection, netKey: String?, route: String?, saved: SavedConnections) {
+    if (netKey == null || conn.via != null) return
+    val key = route ?: DIRECT
+    val latest = saved.find(conn.name) ?: return
+    if (latest.routeByNetwork[netKey] == key) return
+    saved.save(latest.copy(routeByNetwork = latest.routeByNetwork + (netKey to key)))
 }
 
 private suspend fun SshClientManager.connectOn(

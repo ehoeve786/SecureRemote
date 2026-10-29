@@ -501,6 +501,8 @@ private fun ConnectionFormSheet(
                         keyId = if (authMethod != AuthMethod.PASSWORD) keyId else null,
                         via = via,
                         fallbackVia = if (via == null) fallback else null,
+                        // Learned by connecting, not edited here, so an edit keeps them.
+                        routeByNetwork = initial?.routeByNetwork.orEmpty(),
                         // Kept only for the same address: a new address is a new host and needs its key approved again.
                         hostKey = if (forgetKey || initial == null || initial.host != host.trim() || initial.port != (portNum ?: 22) || initial.via != via) null else initial.hostKey,
                         allowMcpExec = canExec,
