@@ -72,6 +72,19 @@ class SftpClient(private val ssh: SshClientManager) {
             throwIfCancelled(shouldCancel)
         }
 
+    /** Size of a remote file, or -1 if it does not exist. */
+    suspend fun sizeOf(path: String): Long = run { ch -> runCatching { ch.stat(path).size }.getOrDefault(-1L) }
+
+    /**
+     * Writes [input] to [path], appending when [offset] > 0. The caller has already skipped the first [offset]
+     * bytes of [input], which must match what the remote file already holds.
+     */
+    suspend fun uploadPart(input: InputStream, path: String, offset: Long, shouldCancel: () -> Boolean = { false }, onProgress: (Long) -> Unit = {}) =
+        run {
+            it.put(input, path, monitor(shouldCancel, onProgress), if (offset > 0) ChannelSftp.APPEND else ChannelSftp.OVERWRITE)
+            throwIfCancelled(shouldCancel)
+        }
+
     suspend fun upload(input: InputStream, path: String, shouldCancel: () -> Boolean = { false }, onProgress: (Long) -> Unit = {}) =
         run {
             it.put(input, path, monitor(shouldCancel, onProgress), ChannelSftp.OVERWRITE)

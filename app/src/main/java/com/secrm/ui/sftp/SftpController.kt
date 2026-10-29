@@ -272,23 +272,46 @@ class SftpController(
 
     fun upload(uris: List<Uri>) {
         val dir = _state.value.path ?: return
-        // A new name for every upload: an upload never replaces a file already in the folder, and a
-        // cancelled one removes only the file it created. Read when the upload runs, not when it is queued,
-        // so an earlier queued upload's file is already counted.
+        // A new name for every upload: an upload never replaces a file already in the folder. The name is
+        // chosen when the upload runs, not when it is queued, so an earlier queued upload's file is already counted.
+        // Bytes go to a partial file first; an interrupted upload resumes from it, and it is renamed when complete.
         transfer(null) { _ ->
             val taken = client.list(dir).mapTo(HashSet()) { it.name }
             uris.forEachIndexed { i, u ->
                 if (cancelRequested) return@forEachIndexed
                 val (given, size) = describe(u)
                 val name = uniqueName(given, taken).also { taken += it }
-                val remote = SftpClient.join(dir, name)
                 _state.update { it.copy(transfer = Transfer(true, name, 0, size, i + 1, uris.size)) }
+                val part = SftpClient.join(dir, partialName(u, size))
+                val offset = client.sizeOf(part).takeIf { it in 1 until size } ?: 0L
+                if (offset == 0L) client.removeQuietly(part)
                 withContext(Dispatchers.IO) {
-                    runCatching {
-                        app.contentResolver.openInputStream(u)!!.use { client.upload(it, remote, { cancelRequested }) { n -> progress(n) } }
-                    }.onFailure { if (cancelRequested) client.removeQuietly(remote) else throw it }
+                    app.contentResolver.openInputStream(u)!!.use { input ->
+                        skipFully(input, offset)
+                        client.uploadPart(input, part, offset, { cancelRequested }) { n -> progress(offset + n) }
+                    }
                 }
+                // A cancel or failure above keeps the partial file, so the next attempt resumes it.
+                if (cancelRequested) return@forEachIndexed
+                client.rename(part, SftpClient.join(dir, name))
             }
+        }
+    }
+
+    /** Remote name for an upload's partial file: the same source and size always map to the same name. */
+    private fun partialName(u: Uri, size: Long): String {
+        val key = java.security.MessageDigest.getInstance("SHA-256")
+            .digest("$u|$size".toByteArray())
+            .take(8).joinToString("") { "%02x".format(it) }
+        return ".secrm-$key.part"
+    }
+
+    private fun skipFully(input: java.io.InputStream, bytes: Long) {
+        var left = bytes
+        while (left > 0) {
+            val skipped = input.skip(left)
+            if (skipped <= 0) break
+            left -= skipped
         }
     }
 
