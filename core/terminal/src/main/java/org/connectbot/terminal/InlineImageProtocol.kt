@@ -282,7 +282,8 @@ internal class InlineImageProtocol(
             width = available.toDouble()
         }
         val columns = ceil(width / store.cellWidth).toInt().coerceAtLeast(1)
-        val rows = ceil(height / store.cellHeight).toInt().coerceIn(1, store.limits.maxDimension)
+        // Never taller than the screen: each row of a placement costs work on every scroll.
+        val rows = ceil(height / store.cellHeight).toInt().coerceIn(1, minOf(store.rows, store.limits.maxDimension))
         require(store.placements.size < store.limits.maxPlacements) { "ENOSPC:too many placements" }
         val movement = (rows.toLong() shl 32) or (columns.toLong() shl 1) or 1
         store.edit(TermRect(row, row + rows, col, col + columns))
