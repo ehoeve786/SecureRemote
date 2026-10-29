@@ -970,7 +970,7 @@ var protoSplitter = regexp.MustCompile(`^(tcp|udp|ping)(4|6)?$`)
 
 func (tnet *Net) DialContext(ctx context.Context, network, address string) (net.Conn, error) {
 	if ctx == nil {
-		panic("nil context")
+		return nil, errors.New("nil context")
 	}
 	var acceptV4, acceptV6 bool
 	matches := protoSplitter.FindStringSubmatch(network)
