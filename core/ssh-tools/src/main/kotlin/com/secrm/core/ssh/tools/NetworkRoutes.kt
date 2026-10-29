@@ -43,7 +43,12 @@ internal fun isPrivateIpv4(ip: String): Boolean {
  */
 internal fun orderRoutes(via: String?, fallback: String?, onHostNetwork: Boolean, remembered: String?): List<String?> {
     if (via != null) return listOf(via)
-    val defaults: List<String?> = if (fallback != null && !onHostNetwork) listOf(fallback, null) else listOfNotNull(null, fallback)
+    // A null entry is direct; listOfNotNull would drop it, so the lists are built with it kept.
+    val defaults: List<String?> = when {
+        fallback == null -> listOf(null)
+        onHostNetwork -> listOf(null, fallback)
+        else -> listOf(fallback, null)
+    }
     val wanted: String? = remembered?.let { if (it == DIRECT) null else it }
     return if (remembered != null && defaults.contains(wanted)) listOf(wanted) + defaults.filterNot { it == wanted }
     else defaults
