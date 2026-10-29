@@ -7,6 +7,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.secrm.SecureRemoteApp
 import com.secrm.core.ssh.tools.fillSnippet
@@ -35,8 +36,10 @@ fun SnippetSheet(app: SecureRemoteApp, onInsert: (String) -> Unit, onDismiss: ()
                 item {
                     Text(s.name, style = MaterialTheme.typography.labelLarge)
                     placeholdersOf(s.command).forEach { v ->
+                        // Variables often hold passwords, so they are masked on screen, as the key fields are.
                         OutlinedTextField(value = values[v].orEmpty(), onValueChange = { values = values + (v to it) },
-                            singleLine = true, label = { Text(v) }, modifier = Modifier.fillMaxWidth())
+                            singleLine = true, label = { Text(v) }, visualTransformation = PasswordVisualTransformation(),
+                            modifier = Modifier.fillMaxWidth())
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                         PillButton("Cancel", PillStyle.Ghost, Modifier.weight(1f), onClick = { filling = null })
