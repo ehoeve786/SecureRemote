@@ -16,7 +16,7 @@ object SshTools {
     /** The read-only tools run fixed, short commands, so they get a short leash. */
     private const val READ_TIMEOUT_MS = 15_000L
     private const val MAX_READ_BYTES = 1 shl 20
-    private val SERVICE_NAME = Regex("[A-Za-z0-9@._:-]{1,128}")
+    private val SERVICE_NAME = Regex("[A-Za-z0-9@._:][A-Za-z0-9@._:-]{0,127}")
 
     /** Which owner flag a tool needs: `allowMcpExec` for running commands, `allowMcpRead` for fixed read-only queries. */
     private enum class Need(val label: String) { EXEC("exec"), READ("read") }

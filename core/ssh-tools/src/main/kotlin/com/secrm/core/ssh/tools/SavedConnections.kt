@@ -71,6 +71,15 @@ suspend fun SshClientManager.connectSaved(
     return false
 }
 
+/**
+ * Applies [change] to the latest saved record, not the copy taken before the connect, so an owner edit made
+ * meanwhile (such as revoking an MCP flag) is kept.
+ */
+private fun saveLearned(saved: SavedConnections, name: String, change: (SavedConnection) -> SavedConnection) {
+    val latest = saved.find(name) ?: return
+    saved.save(change(latest))
+}
+
 /** Records the route that worked on this network, read from the latest saved record so no other change is lost. */
 internal fun rememberRoute(conn: SavedConnection, netKey: String?, route: String?, saved: SavedConnections) {
     if (netKey == null || conn.via != null) return
@@ -95,11 +104,11 @@ private suspend fun SshClientManager.connectOn(
         seen
     }
     if (connect(cfg(conn.host, pinned))) {
-        if (conn.hostKey == null) saved.save(conn.copy(hostKey = pinned))
+        if (conn.hostKey == null) saveLearned(saved, conn.name) { it.copy(hostKey = it.hostKey ?: pinned) }
         return true
     }
     val moved = (if (allowRediscover && via == null) rediscover(conn.host, conn.port, pinned) else null)
         ?: return false
-    saved.save(conn.copy(host = moved))
+    saveLearned(saved, conn.name) { it.copy(host = moved) }
     return connect(cfg(moved, pinned))
 }

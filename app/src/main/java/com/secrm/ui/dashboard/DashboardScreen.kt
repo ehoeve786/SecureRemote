@@ -491,6 +491,8 @@ private fun ConnectionFormSheet(
                 PillButton("Cancel", PillStyle.Ghost, Modifier.weight(1f)) { onDismiss() }
                 PillButton("Save", PillStyle.Primary, Modifier.weight(1f)) {
                     if (!valid) return@PillButton
+                    // Learned fields come from the latest saved record: the sheet may have been open while a connect learned them.
+                    val latest = initial?.let { app.connections.find(it.name) } ?: initial
                     onSave(SavedConnection(
                         name = name.trim(),
                         host = host.trim(),
@@ -502,9 +504,9 @@ private fun ConnectionFormSheet(
                         via = via,
                         fallbackVia = if (via == null) fallback else null,
                         // Learned by connecting, not edited here, so an edit keeps them.
-                        routeByNetwork = initial?.routeByNetwork.orEmpty(),
+                        routeByNetwork = latest?.routeByNetwork.orEmpty(),
                         // Kept only for the same address: a new address is a new host and needs its key approved again.
-                        hostKey = if (forgetKey || initial == null || initial.host != host.trim() || initial.port != (portNum ?: 22) || initial.via != via) null else initial.hostKey,
+                        hostKey = if (forgetKey || latest == null || latest.host != host.trim() || latest.port != (portNum ?: 22) || latest.via != via) null else latest.hostKey,
                         allowMcpExec = canExec,
                         allowMcpRead = canRead
                     ))
