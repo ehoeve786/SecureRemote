@@ -1,6 +1,7 @@
 package com.secrm.ui.server
 
 import android.content.ClipData
+import com.secrm.ui.sensitiveClip
 import android.content.ClipboardManager
 import android.content.Context
 import androidx.compose.foundation.background
@@ -21,7 +22,6 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.PasswordVisualTransformation
-import android.os.PersistableBundle
 import com.secrm.SecureRemoteApp
 import com.secrm.core.tunnel.Tunnel
 import com.secrm.design.*
@@ -460,12 +460,6 @@ private fun SecretOrPlaceholder(value: String) {
         PillButton(if (shown) "Hide" else "Show", PillStyle.Ghost, Modifier.fillMaxWidth()) { shown = !shown }
     }
 }
-
-/** A clip the system keeps out of clipboard previews (Android 13+ reads the flag; older versions ignore it). */
-private fun sensitiveClip(label: String, text: String): ClipData =
-    ClipData.newPlainText(label, text).apply {
-        description.extras = PersistableBundle().apply { putBoolean("android.content.extra.IS_SENSITIVE", true) }
-    }
 
 @Composable
 private fun AgentTokensSection(app: SecureRemoteApp) {

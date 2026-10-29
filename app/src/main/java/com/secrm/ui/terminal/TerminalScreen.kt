@@ -66,7 +66,7 @@ private fun TerminalPage(app: SecureRemoteApp, host: HostSession, onOpenFiles: (
             TextButton({ selecting = bridge.transcript() }) { Text("Select") }
             TextButton({
                 (ctx.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager)
-                    .setPrimaryClip(android.content.ClipData.newPlainText("command output", bridge.lastOutput()))
+                    .setPrimaryClip(com.secrm.ui.sensitiveClip("command output", bridge.lastOutput()))
             }) { Text("Copy") }
         } }
         if (showPorts) app.sessions.current.value?.ssh?.let { PortForwardSheet(it, onDismiss = { showPorts = false }) }
@@ -164,7 +164,7 @@ private fun TranscriptSelector(text: String, onClose: () -> Unit) {
                 Box(Modifier.tappable {
                     if (anchor < 0) return@tappable
                     (ctx.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager)
-                        .setPrimaryClip(android.content.ClipData.newPlainText("terminal", lines.subList(minOf(anchor, end), maxOf(anchor, end) + 1).joinToString("\n")))
+                        .setPrimaryClip(com.secrm.ui.sensitiveClip("terminal", lines.subList(minOf(anchor, end), maxOf(anchor, end) + 1).joinToString("\n")))
                     onClose()
                 }.padding(Space.sm)) {
                     Text("Copy", style = MaterialTheme.mono, color = if (anchor < 0) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f) else MaterialTheme.colorScheme.primary)
