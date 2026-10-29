@@ -60,8 +60,9 @@ internal class TerminalInversion {
     fun cursor(rect: RectF) {
         cursor.rewind()
         cursor.addRect(rect, Path.Direction.CW)
-        // Inverting a selected pixel twice restores its original color.
-        check(mask.op(cursor, Path.Op.XOR))
+        // Inverting a selected pixel twice restores its original color. If the path op fails, drop the
+        // mask rather than throw inside a draw pass: a missing highlight beats a crashed terminal.
+        if (!mask.op(cursor, Path.Op.XOR)) mask.rewind()
     }
 
     @Suppress("DEPRECATION") // Region.Op.DIFFERENCE also supports API 24–25.
