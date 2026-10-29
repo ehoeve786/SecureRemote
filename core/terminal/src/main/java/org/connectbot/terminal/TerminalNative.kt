@@ -36,6 +36,11 @@ import java.nio.ByteBuffer
  * - Callbacks MUST NOT call back into Terminal methods (will deadlock)
  * - Safe to call from multiple threads (serialized by native mutex)
  */
+/** Where a copy of the native library goes when the class loader already has one. The app sets it to a private directory. */
+object NativeLibraryFallback {
+    @Volatile var dir: File? = null
+}
+
 internal class TerminalNative(callbacks: TerminalCallbacks) : AutoCloseable {
     private var nativePtr: Long = 0
     private val lifetimeLock = ReentrantLock(true)
@@ -241,7 +246,8 @@ internal class TerminalNative(callbacks: TerminalCallbacks) : AutoCloseable {
                 .firstOrNull { it.isFile }
                 ?: throw cause
 
-            val target = File.createTempFile("${LIBRARY_NAME}-", "-$mappedName")
+            val dir = NativeLibraryFallback.dir ?: throw cause
+            val target = File.createTempFile("${LIBRARY_NAME}-", "-$mappedName", dir)
             target.deleteOnExit()
             source.copyTo(target, overwrite = true)
             System.load(target.absolutePath)

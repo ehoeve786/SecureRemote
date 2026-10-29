@@ -436,6 +436,7 @@ internal class InlineImageStore(var limits: InlineImageLimits, private val handl
     fun placeholders(cells: PackedCells, screenRow: Int? = null): List<ImageSlice> {
         data class Previous(val image: Long, val placement: Long, val row: Int, val col: Int, val high: Int)
         var previous: Previous? = null
+        val virtualByAsset = placements.filter { it.virtual && it.alternate == alternate }.groupBy { it.asset.id }
         return buildList {
             for (col in 0 until cells.size) {
                 if (!cells.placeholder(col)) {
@@ -452,7 +453,7 @@ internal class InlineImageStore(var limits: InlineImageLimits, private val handl
                 previous = Previous(image, placement, row, column, high)
                 if (row < 0 || column < 0 || high !in 0..255) continue
                 val id = image or (high.toLong() shl 24)
-                val p = placements.firstOrNull { it.virtual && it.asset.id == id && (placement == 0L || it.id == placement) && it.alternate == alternate } ?: continue
+                val p = virtualByAsset[id]?.firstOrNull { placement == 0L || it.id == placement } ?: continue
                 if (row >= p.height || column >= p.width) continue
                 if (screenRow != null && placeholderAnchors.values.sumOf { it.size } < limits.maxPlacements) {
                     placeholderAnchors.getOrPut(p.asset.id to p.id) { mutableSetOf() }.add(screenRow - row to col - column)

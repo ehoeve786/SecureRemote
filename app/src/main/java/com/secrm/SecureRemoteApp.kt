@@ -61,6 +61,7 @@ class SecureRemoteApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        org.connectbot.terminal.NativeLibraryFallback.dir = codeCacheDir
         config = EncryptedConfigStore(this)
         ui = com.secrm.data.UiPrefs(this)
         mcp = McpPrefs(this)
