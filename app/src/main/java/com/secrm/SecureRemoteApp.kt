@@ -117,7 +117,14 @@ class SecureRemoteApp : Application() {
 
     /** Commands and secrets never reach the audit log; their length does, so the entry is still useful. */
     private fun redacted(args: JsonObject) = JsonObject(args.mapValues { (k, v) ->
-        if (k in SECRET_ARGS) JsonPrimitive("[redacted ${v.toString().length} chars]") else v
+        when {
+            k in SECRET_ARGS -> JsonPrimitive("[redacted ${v.toString().length} chars]")
+            // Snippet variables are values an agent passes in, often passwords. Keep their names, not their values.
+            k == "variables" && v is JsonObject -> JsonObject(v.mapValues { (_, value) ->
+                JsonPrimitive("[redacted ${value.toString().length} chars]")
+            })
+            else -> v
+        }
     })
 
     private companion object {

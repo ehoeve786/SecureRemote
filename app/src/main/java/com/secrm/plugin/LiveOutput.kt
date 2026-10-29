@@ -4,19 +4,26 @@ import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.io.OutputStream
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.LinkedBlockingQueue
 
 private const val CR = '\r'.code.toByte()
 private const val LF = '\n'.code.toByte()
 private val RED = "\u001b[31m".toByteArray()
 private val RESET = "\u001b[0m".toByteArray()
+private const val MAX_QUEUED_BYTES = 1 shl 20
+private val TRUNCATED_NOTE = "\r\n[output truncated: the terminal was not open to read it]\r\n".toByteArray()
 
 /**
- * A running plugin command's output, for a live terminal to read. Holds everything until it is read,
- * so a terminal opened late still shows the start. [finish] ends it.
+ * A running plugin command's output, for a live terminal to read. Holds up to [MAX_QUEUED_BYTES] until it is
+ * read, so a terminal opened late still shows the start; output past that is dropped. [finish] ends it.
  */
 class LiveOutput : InputStream() {
     private val chunks = LinkedBlockingQueue<ByteArray>()
+    // Bytes waiting in [chunks]. Output past the cap is dropped, and one note says so, so a command that
+    // writes a lot while nobody is watching cannot grow the app's memory without limit.
+    private val queuedBytes = AtomicInteger()
+    private var truncated = false
     private var current = ByteArray(0)
     private var pos = 0
     private var done = false
@@ -34,8 +41,21 @@ class LiveOutput : InputStream() {
                 o.write(b[i].toInt())
             }
             if (red) o.write(RESET)
-            chunks.put(o.toByteArray())
+            offer(o.toByteArray())
         }
+    }
+
+    @Synchronized
+    private fun offer(bytes: ByteArray) {
+        if (queuedBytes.get() + bytes.size > MAX_QUEUED_BYTES) {
+            if (!truncated) {
+                truncated = true
+                chunks.put(TRUNCATED_NOTE)
+            }
+            return
+        }
+        queuedBytes.addAndGet(bytes.size)
+        chunks.put(bytes)
     }
 
     /** Ends the output once everything written so far has been read. */
@@ -51,6 +71,7 @@ class LiveOutput : InputStream() {
         if (pos >= current.size) {
             if (done) return -1
             current = chunks.take()
+            queuedBytes.addAndGet(-current.size)
             pos = 0
             if (current.isEmpty()) { done = true; return -1 }
         }
