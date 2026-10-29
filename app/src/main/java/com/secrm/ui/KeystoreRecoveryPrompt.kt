@@ -32,6 +32,8 @@ fun KeystoreRecoveryPrompt(app: SecureRemoteApp) {
                 // Reset ends every grant too: claude.ai connections are not kept.
                 app.oauth.revokeAll()
                 app.config.resetStorage()
+                // The tunnel's cached "has config" flag and key must go too; the saved config it refers to is gone.
+                app.wireguard.forget()
                 open = false
             }) { Text("Reset") }
         },
