@@ -124,6 +124,9 @@ func (c *wgConfig) set(key, value string) (err error) {
 		}
 	case "listenport":
 		c.ListenPort, err = strconv.Atoi(value)
+		if err == nil && (c.ListenPort < 0 || c.ListenPort > 65535) {
+			err = fmt.Errorf("ListenPort %d is outside 0-65535", c.ListenPort)
+		}
 	}
 	return err
 }
@@ -150,6 +153,9 @@ func (p *wgPeer) set(key, value string) (err error) {
 	case "persistentkeepalive":
 		if value != "off" {
 			p.Keepalive, err = strconv.Atoi(value)
+			if err == nil && (p.Keepalive < 0 || p.Keepalive > 65535) {
+				err = fmt.Errorf("PersistentKeepalive %d is outside 0-65535", p.Keepalive)
+			}
 		}
 	}
 	return err
@@ -214,4 +220,3 @@ func splitList(s string) []string {
 	}
 	return out
 }
-
