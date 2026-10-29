@@ -527,8 +527,9 @@ internal class SelectionManager {
             }
 
             SelectionMode.CHARACTER, SelectionMode.WORD -> {
-                if (line != null && col > lastContentCol(line)) return false
-                range.contains(row, col)
+                if (!range.contains(row, col)) return false
+                // Only selected cells pay for the trailing-blank scan.
+                !(line != null && col > lastContentCol(line))
             }
 
             SelectionMode.NONE -> false

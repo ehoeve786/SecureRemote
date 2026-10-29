@@ -395,7 +395,7 @@ internal class TerminalShaping(sourcePaint: TerminalTextPaint, private val byteL
     }
 
     companion object {
-        private const val MAX_PARAGRAPH_ROWS = 500
+        private const val MAX_PARAGRAPH_ROWS = 128
 
         // Signed script identifiers: negative scripts use contained RTL ordering.
         // ASCII, CJK and emoji never enter platform script classification or shaping.
