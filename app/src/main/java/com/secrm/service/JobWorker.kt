@@ -51,7 +51,7 @@ class JobWorker(context: Context, params: WorkerParameters) : CoroutineWorker(co
             val output = Redact.text(r.stdout + r.stderr, Redact.secretsOf(auth)).trim()
             (r.exitCode == 0) to "exit ${r.exitCode}" + if (output.isEmpty()) "" else ": ${output.take(200)}"
         } catch (t: Exception) {
-            false to (t.message ?: "job failed")
+            false to Redact.text(t.message ?: "job failed", Redact.secretsOf(auth))
         } finally {
             client.shutdown()
         }

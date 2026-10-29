@@ -93,6 +93,8 @@ object PluginProtocol {
             if (completion.getBooleanExtra(CALL_FOREGROUND, false)) context.startForegroundService(completion)
             else context.startService(completion)
         } else {
+            // A component left over from the sender would take the broadcast to another package.
+            completion.component = null
             completion.`package` = pkg
             context.sendBroadcast(completion)
         }
