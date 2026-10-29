@@ -80,6 +80,8 @@ class McpOAuth(
             "authorization_code" -> {
                 val c = params["code"]?.let(codes::remove) ?: return null
                 val verifier = params["code_verifier"] ?: return null
+                // RFC 7636 4.1: 43 to 128 characters.
+                if (verifier.length !in 43..128) return null
                 // RFC 6749 4.1.3: redirect_uri is required here when the authorize request sent one.
                 if (c.expires < now() || params["redirect_uri"] != c.redirect) return null
                 if (!MessageDigest.isEqual(b64(sha256(verifier.toByteArray())).toByteArray(), c.challenge.toByteArray())) return null

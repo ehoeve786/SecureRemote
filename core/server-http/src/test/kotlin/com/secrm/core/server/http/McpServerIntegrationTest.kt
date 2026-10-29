@@ -164,7 +164,7 @@ class McpServerIntegrationTest {
     }
 
     @Test fun fullOAuthFlowThenToolCallAndRefresh() {
-        val verifier = "a-verifier-long-enough-for-pkce-0123456789"
+        val verifier = "a-verifier-long-enough-for-pkce-0123456789abc"
         val challenge = Base64.getUrlEncoder().withoutPadding()
             .encodeToString(MessageDigest.getInstance("SHA-256").digest(verifier.toByteArray()))
 

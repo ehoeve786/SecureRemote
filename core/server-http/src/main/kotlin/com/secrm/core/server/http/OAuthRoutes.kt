@@ -123,6 +123,8 @@ internal fun Route.oauthRoutes(oauth: McpOAuth, mcpPath: String) {
         call.respondRedirect("$redirect?code=${enc(code)}&state=${enc(p["state"].orEmpty())}")
     }
     post("/token") {
+        // RFC 6749 5.1: token responses, errors included, must not be cached.
+        call.response.header(HttpHeaders.CacheControl, "no-store")
         val p = call.boundedText()?.let { parseQueryString(it) } ?: return@post call.respond(HttpStatusCode.PayloadTooLarge)
         if (!tokenLimit.allow()) return@post call.respond(HttpStatusCode.TooManyRequests)
         val (access, refresh) = oauth.token(p.names().associateWith { p[it] })
