@@ -105,14 +105,23 @@ internal class KeyboardHandler(
     var pendingDeadChar: Int by mutableStateOf(0)
         internal set
 
+    /** The last key event the host's interceptor saw; see [onKeyEvent]. */
+    private var lastInterceptedEvent: AndroidKeyEvent? = null
+
     /**
      * Process a Compose KeyEvent and send to terminal.
      * Returns true if the event was handled.
      */
     @Suppress("DEPRECATION")
     fun onKeyEvent(event: ComposeKeyEvent): Boolean {
-        if (onInterceptKey?.invoke(event) == true) {
-            return true
+        // An unhandled key reaches this twice: from the Compose preview handler, then from the view's raw listener.
+        // The host's interceptor sees each event once.
+        val native = event.nativeKeyEvent
+        if (native !== lastInterceptedEvent) {
+            lastInterceptedEvent = native
+            if (onInterceptKey?.invoke(event) == true) {
+                return true
+            }
         }
 
         val nativeEvent = event.nativeKeyEvent

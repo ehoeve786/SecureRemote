@@ -104,6 +104,8 @@ class TerminalBridge private constructor(
                 note("connection closed" + (why?.let { ": $it" } ?: ""))
                 emulator.writeInput(("\u001b[90m" + s.recentLog().replace("\n", "\r\n") + "\u001b[0m\r\n").toByteArray())
             }
+            // The session's output is not kept after the connection ends.
+            synchronized(log) { log.reset(); mark = 0 }
             onEnd?.invoke()
         }
         return true
