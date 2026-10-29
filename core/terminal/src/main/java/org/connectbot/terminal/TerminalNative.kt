@@ -209,8 +209,12 @@ internal class TerminalNative(callbacks: TerminalCallbacks) : AutoCloseable {
     private external fun nativeDispatchKey(ptr: Long, modifiers: Int, key: Int): Boolean
     private external fun nativeDispatchCharacter(ptr: Long, modifiers: Int, character: Int): Boolean
     private external fun nativePaste(ptr: Long, data: ByteArray)
+    private external fun nativeBracketedPaste(ptr: Long): Boolean
 
     fun pasteText(data: ByteArray) = withNative { nativePaste(nativePtr, data) }
+
+    /** Whether the remote program has turned on bracketed paste (DEC mode 2004). */
+    fun bracketedPaste(): Boolean = withNative { nativeBracketedPaste(nativePtr) }
     private external fun nativeGetCells(ptr: Long, buffer: ByteBuffer, requests: Int): Int
     private external fun nativeSetPaletteColors(ptr: Long, colors: IntArray, count: Int): Int
     private external fun nativeSetDefaultColors(ptr: Long, fgColor: Int, bgColor: Int): Int

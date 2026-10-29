@@ -5,6 +5,9 @@
  */
 package org.connectbot.terminal
 
+/** The native side returned fewer cells than were asked for. The snapshot is then not built from it. */
+internal class IncompleteCellTransfer : IllegalStateException("Incomplete cell transfer")
+
 /** Fixed-capacity JNI scratch. The owning emulator serializes all use. */
 internal class ScreenTransfer {
     private val buffer = CellData.buffer()
@@ -36,7 +39,7 @@ internal class ScreenTransfer {
                 col += count
             }
             if (requests == 0) continue
-            check(native.getCells(buffer, requests) == records) { "Incomplete cell transfer" }
+            if (native.getCells(buffer, requests) != records) throw IncompleteCellTransfer()
             calls++
             bytes += records * CellData.BYTES + requests * 16L
             var offset = CellData.HEADER_BYTES

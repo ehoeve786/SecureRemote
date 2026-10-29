@@ -20,6 +20,10 @@
 
     <!-- Overflow menu item that pastes clipboard text into the terminal and dismisses the selection -->
     <string name="terminal_selection_paste">Paste</string>
+    <string name="terminal_multiline_paste_title">Paste several lines?</string>
+    <string name="terminal_multiline_paste_message">The remote program doesn\'t support bracketed paste, so each line will run as its own command.</string>
+    <string name="terminal_multiline_paste_confirm">Paste</string>
+    <string name="terminal_multiline_paste_cancel">Cancel</string>
 
     <!-- Overflow menu item showing the current selection granularity; tapping cycles to the next mode (Character → Word → Line → Character) -->
     <string name="terminal_selection_mode_character">Mode: Character</string>
