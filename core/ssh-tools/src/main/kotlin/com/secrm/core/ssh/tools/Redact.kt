@@ -8,7 +8,8 @@ import com.secrm.core.ssh.SshAuth
  */
 object Redact {
     private const val MARK = "[REDACTED]"
-    private const val MIN_SECRET = 4
+    // Every non-empty secret is scrubbed, however short. A short password can match common text; that is accepted.
+    private const val MIN_SECRET = 1
 
     private val pem = Regex("-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\\s\\S]*?-----END [A-Z0-9 ]*PRIVATE KEY-----")
     private val assignment = Regex("(?i)\\b(pass(word)?|passphrase|secret|token|api[_-]?key)(\\s*[:=]\\s*)\\S+")
