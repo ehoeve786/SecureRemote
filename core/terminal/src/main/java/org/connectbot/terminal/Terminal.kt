@@ -639,10 +639,9 @@ internal fun TerminalWithAccessibility(
             val slices = (0 until screenState.snapshot.rows).flatMap { screenState.getVisibleLine(it).images }
             store.updateViewport(ImageViewport(-screenState.scrollbackPosition, slices, baseCharWidth, baseCharHeight, android.os.SystemClock.uptimeMillis()))
             if (slices.isEmpty() || !needsFrames) return@collectLatest
-            while (true) {
-                // Also yield with synthetic/immediate clocks; a static image goes idle
-                // as soon as maintenance publishes that its decode has completed.
-                delay(1)
+            // One viewport update per display frame, for as long as the store still needs frames. A static
+            // image goes idle as soon as maintenance publishes that its decode has completed.
+            while (store.frameUpdatesNeeded) {
                 androidx.compose.runtime.withFrameNanos { frameTime ->
                     store.updateViewport(ImageViewport(-screenState.scrollbackPosition, slices, baseCharWidth, baseCharHeight, frameTime / 1_000_000L))
                 }
