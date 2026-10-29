@@ -14,7 +14,8 @@ import java.util.concurrent.ConcurrentHashMap
 /**
  * One live SSH session per saved connection, shared by MCP calls so a burst of calls pays the
  * handshake once. A session with no calls for [idleMs] is closed. A session that has died is
- * replaced on its next use, and so is one whose connection settings changed.
+ * replaced on its next use, and so is one whose connection settings changed. A call whose settings differ
+ * from a session that is in use gets its own connection, closed after that call; the shared session is left alone.
  *
  * Connects run under one lock, so a slow connect delays other connects; calls on a live session do not wait.
  */
@@ -24,7 +25,8 @@ class McpSessionPool(
     private val idleMs: Long = 60_000L,
     private val newClient: () -> SshClientManager,
 ) {
-    private class Entry(val conn: SavedConnection, val auth: SshAuth, val client: SshClientManager) {
+    /** [shared] is false for a private connection made for one call; it is never stored or reaped. */
+    private class Entry(val conn: SavedConnection, val auth: SshAuth, val client: SshClientManager, val shared: Boolean = true) {
         var users = 0
         var reaper: Job? = null
     }
@@ -45,6 +47,10 @@ class McpSessionPool(
         } finally {
             lock.withLock {
                 entry.users--
+                if (!entry.shared) {
+                    entry.client.shutdown()
+                    return@withLock
+                }
                 // A session that died during the call is dropped now, not on its next use.
                 if (entry.client.activeSession() == null) evict(entry) else if (entry.users == 0) scheduleReap(entry)
             }
@@ -59,8 +65,19 @@ class McpSessionPool(
                 e.users++
                 return e
             }
+            // In use by other calls, and alive: leave it open for them, and connect privately for this call.
+            if (e.users > 0 && e.client.activeSession() != null) {
+                val client = connectNew(conn, auth) ?: return null
+                return Entry(conn, auth, client, shared = false).also { it.users = 1 }
+            }
             evict(e)
         }
+        val client = connectNew(conn, auth) ?: return null
+        return Entry(conn, auth, client).also { it.users = 1; entries[conn.name] = it }
+    }
+
+    /** Caller holds [lock]. Connects a new client for [conn], or records why it could not. */
+    private suspend fun connectNew(conn: SavedConnection, auth: SshAuth): SshClientManager? {
         val client = newClient()
         if (!client.connectSaved(conn, auth, saved, allowRediscover = false)) {
             keyChanged[conn.name] = client.state.value is SshState.HostKeyChanged
@@ -68,7 +85,7 @@ class McpSessionPool(
             return null
         }
         keyChanged.remove(conn.name)
-        return Entry(conn, auth, client).also { it.users = 1; entries[conn.name] = it }
+        return client
     }
 
     /** Caller holds [lock]. A session with port forwards open is kept: closing it would close the forwards. */

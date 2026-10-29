@@ -8,9 +8,12 @@ class RedactTest {
         assertEquals("login [REDACTED] ok", Redact.text("login hunter2hunter2 ok", listOf("hunter2hunter2")))
     }
 
-    @Test fun shortSecretsAreNotUsedAsPatterns() {
-        // A 2-char password would otherwise blank out every "ab" in the output.
-        assertEquals("abc", Redact.text("abc", listOf("ab")))
+    @Test fun shortSecretsAreScrubbedToo() {
+        assertEquals("[REDACTED]c", Redact.text("abc", listOf("ab")))
+    }
+
+    @Test fun emptySecretIsIgnored() {
+        assertEquals("abc", Redact.text("abc", listOf("")))
     }
 
     @Test fun removesPemBlocks() {
