@@ -8,6 +8,7 @@ import android.content.IntentFilter
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
+import com.secrm.BuildConfig
 import com.secrm.R
 import com.secrm.SecureRemoteApp
 import com.secrm.core.server.http.McpAuth
@@ -38,11 +39,14 @@ class McpServerService : Service() {
         private const val START = "start"
         private const val STOP = "stop"
         fun start(ctx: Context) {
+            // The store build has no MCP server; its manifest does not declare this service.
+            if (!BuildConfig.FULL) return
             val i = Intent(ctx, McpServerService::class.java).setAction(START)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) ctx.startForegroundService(i)
             else ctx.startService(i)
         }
         fun stop(ctx: Context) {
+            if (!BuildConfig.FULL) return
             ctx.startService(Intent(ctx, McpServerService::class.java).setAction(STOP))
         }
 

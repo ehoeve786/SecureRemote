@@ -21,7 +21,7 @@ class MainActivity : FragmentActivity() {
         // recent-apps preview.
         window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
         // A foreground service keeps the tailnet's network alive in the background (and serves Funnel).
-        if ((application as SecureRemoteApp).tailscale.enabled) com.secrm.service.McpServerService.start(this)
+        if (BuildConfig.FULL && (application as SecureRemoteApp).tailscale.enabled) com.secrm.service.McpServerService.start(this)
         val app = application as SecureRemoteApp
         setContent {
             val dark = isDark(app.ui.mode)

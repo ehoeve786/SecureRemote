@@ -1,6 +1,7 @@
 package com.secrm.ui.server
 
 import android.content.ClipData
+import com.secrm.BuildConfig
 import com.secrm.ui.sensitiveClip
 import android.content.ClipboardManager
 import android.content.Context
@@ -63,8 +64,10 @@ fun ServerControlScreen(app: SecureRemoteApp, onBack: (() -> Unit)? = null, onOp
             item { TailscaleSection(app) }
             item { WireGuardSection(app) }
 
-            item { SectionHeader("MCP server") }
-            item { McpSection(app, onOpenAudit) }
+            if (BuildConfig.FULL) {
+                item { SectionHeader("MCP server") }
+                item { McpSection(app, onOpenAudit) }
+            }
             item { PillButton("Scheduled jobs and health checks", PillStyle.Ghost, Modifier.fillMaxWidth(), onClick = onOpenJobs) }
 
             item { SectionHeader("About") }
@@ -111,8 +114,8 @@ private fun TailscaleSection(app: SecureRemoteApp) {
     var confirmPublic by remember { mutableStateOf(false) }
     var askSignOut by remember { mutableStateOf(false) }
     NetworkCard("Tailscale", st,
-        "Joins your tailnet in-app (no VPN). SSH reaches tailnet hosts and subnet routes; " +
-        "the MCP server is served at https://<this phone>/mcp."
+        "Joins your tailnet in-app (no VPN). SSH reaches tailnet hosts and subnet routes" +
+            (if (BuildConfig.FULL) "; the MCP server is served at https://<this phone>/mcp." else ".")
     ) {
         // The URL comes from the control server; only https is opened.
         val authUrl = (st as? Tunnel.State.NeedsAuth)?.url?.takeIf { it.startsWith("https://") }
@@ -120,7 +123,7 @@ private fun TailscaleSection(app: SecureRemoteApp) {
             PillButton("Sign in to Tailscale", PillStyle.Primary, Modifier.fillMaxWidth()) {
                 uri.openUri(authUrl)
             }
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        if (BuildConfig.FULL) Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Public (Funnel) for claude.ai", style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
             // Turning Funnel on makes the MCP server reachable from the internet, so it is confirmed first.

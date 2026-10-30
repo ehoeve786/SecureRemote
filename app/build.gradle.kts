@@ -18,7 +18,25 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    buildFeatures { compose = true }
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
+    // Two distributions from one source tree. "play" is the store build: no MCP server, no Tasker/MacroDroid plugin,
+    // and the extra permissions those need are removed (see src/play/AndroidManifest.xml). "full" is the complete app,
+    // distributed outside the store (GitHub, F-Droid).
+    flavorDimensions += "distribution"
+    productFlavors {
+        create("play") {
+            dimension = "distribution"
+            buildConfigField("boolean", "FULL", "false")
+            targetSdk = 35
+        }
+        create("full") {
+            dimension = "distribution"
+            buildConfigField("boolean", "FULL", "true")
+        }
+    }
     // CI signs with one fixed key (from repo secrets) so builds update in place.
     System.getenv("SIGNING_PASSWORD")?.let { pw ->
         val ci = signingConfigs.create("ci") {
