@@ -40,7 +40,9 @@ interface SavedConnections {
      * from several threads should make this atomic; the default is not.
      */
     fun update(name: String, change: (SavedConnection) -> SavedConnection) {
-        find(name)?.let { save(change(it)) }
+        val current = find(name) ?: return
+        val next = change(current)
+        if (next != current) save(next)
     }
 
     /**

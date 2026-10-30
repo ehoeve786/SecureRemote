@@ -67,7 +67,9 @@ class ConnectionRepository(
         val current = readStrict().toMutableList()
         val idx = current.indexOfFirst { it.name == name }
         if (idx < 0) return
-        current[idx] = change(current[idx])
+        val next = change(current[idx])
+        if (next == current[idx]) return
+        current[idx] = next
         write(current)
     }
 
