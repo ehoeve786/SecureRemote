@@ -8,6 +8,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.secrm.SecureRemoteApp
 import com.secrm.core.ssh.tools.fillSnippet
@@ -35,10 +36,13 @@ fun SnippetSheet(app: SecureRemoteApp, onInsert: (String) -> Unit, onDismiss: ()
             filling?.let { s ->
                 item {
                     Text(s.name, style = MaterialTheme.typography.labelLarge)
+                    // Variables often hold passwords, so they start masked. Show reveals them for checking.
+                    var revealed by remember { mutableStateOf(false) }
                     placeholdersOf(s.command).forEach { v ->
-                        // Variables often hold passwords, so they are masked on screen, as the key fields are.
                         OutlinedTextField(value = values[v].orEmpty(), onValueChange = { values = values + (v to it) },
-                            singleLine = true, label = { Text(v) }, visualTransformation = PasswordVisualTransformation(),
+                            singleLine = true, label = { Text(v) },
+                            visualTransformation = if (revealed) VisualTransformation.None else PasswordVisualTransformation(),
+                            trailingIcon = { TextButton(onClick = { revealed = !revealed }) { Text(if (revealed) "Hide" else "Show") } },
                             modifier = Modifier.fillMaxWidth())
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {

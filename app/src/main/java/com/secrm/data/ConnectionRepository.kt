@@ -63,6 +63,18 @@ class ConnectionRepository(
 
     /** Synchronized: the MCP path and the app both save, and an unlocked read-modify-write loses updates. */
     @Synchronized
+    override fun update(name: String, change: (SavedConnection) -> SavedConnection) {
+        val current = readStrict().toMutableList()
+        val idx = current.indexOfFirst { it.name == name }
+        if (idx < 0) return
+        val next = change(current[idx])
+        if (next == current[idx]) return
+        current[idx] = next
+        write(current)
+    }
+
+    /** Synchronized: the MCP path and the app both save, and an unlocked read-modify-write loses updates. */
+    @Synchronized
     fun upsert(connection: SavedConnection) {
         val current = readStrict().toMutableList()
         val idx = current.indexOfFirst { it.name == connection.name }

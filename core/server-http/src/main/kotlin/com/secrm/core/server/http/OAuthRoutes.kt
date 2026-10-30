@@ -49,9 +49,14 @@ internal class ClientRateLimits(private val max: Int) {
     private val buckets = object : LinkedHashMap<String, RateLimit>(16, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, RateLimit>?) = size > 256
     }
+    // A new client_id gets a new bucket, so the per-client limit alone can be bypassed. This ceiling covers all of them.
+    private val overall = RateLimit(max = max * 4)
 
     @Synchronized
-    fun allow(clientId: String) = buckets.getOrPut(clientId) { RateLimit(max = max) }.allow()
+    fun allow(clientId: String): Boolean {
+        if (!overall.allow()) return false
+        return buckets.getOrPut(clientId) { RateLimit(max = max) }.allow()
+    }
 }
 
 internal class RateLimit(

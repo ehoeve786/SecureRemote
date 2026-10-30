@@ -132,7 +132,8 @@ internal class KeyboardHandler(
 
     /** True when [text] was held for confirmation instead of being sent. */
     private fun holdMultiline(text: String): Boolean {
-        if (sendingConfirmed || '\n' !in text) return false
+        // One character is a typed key, such as Enter as a newline; the confirmation is for pasted runs of text.
+        if (sendingConfirmed || text.length < 2 || '\n' !in text) return false
         val hold = onMultilinePaste ?: return false
         if (bracketedPasteEnabled()) return false
         hold(text)

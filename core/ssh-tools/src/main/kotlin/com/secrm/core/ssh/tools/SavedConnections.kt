@@ -36,6 +36,16 @@ interface SavedConnections {
     fun find(name: String): SavedConnection?
 
     /**
+     * Applies [change] to the record named [name] as one read-modify-write. Implementations that can be called
+     * from several threads should make this atomic; the default is not.
+     */
+    fun update(name: String, change: (SavedConnection) -> SavedConnection) {
+        val current = find(name) ?: return
+        val next = change(current)
+        if (next != current) save(next)
+    }
+
+    /**
      * Return the private key PEM for a saved key id, or null. Implemented by
      * the app module's KeyRepository; ssh-tools only needs the string.
      */
@@ -76,17 +86,16 @@ suspend fun SshClientManager.connectSaved(
  * meanwhile (such as revoking an MCP flag) is kept.
  */
 private fun saveLearned(saved: SavedConnections, name: String, change: (SavedConnection) -> SavedConnection) {
-    val latest = saved.find(name) ?: return
-    saved.save(change(latest))
+    saved.update(name, change)
 }
 
 /** Records the route that worked on this network, read from the latest saved record so no other change is lost. */
 internal fun rememberRoute(conn: SavedConnection, netKey: String?, route: String?, saved: SavedConnections) {
     if (netKey == null || conn.via != null) return
     val key = route ?: DIRECT
-    val latest = saved.find(conn.name) ?: return
-    if (latest.routeByNetwork[netKey] == key) return
-    saved.save(latest.copy(routeByNetwork = latest.routeByNetwork + (netKey to key)))
+    saved.update(conn.name) { latest ->
+        if (latest.routeByNetwork[netKey] == key) latest else latest.copy(routeByNetwork = latest.routeByNetwork + (netKey to key))
+    }
 }
 
 private suspend fun SshClientManager.connectOn(
