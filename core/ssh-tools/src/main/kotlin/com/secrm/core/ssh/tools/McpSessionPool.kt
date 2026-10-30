@@ -33,6 +33,8 @@ class McpSessionPool(
 
     private val lock = Mutex()
     private val entries = HashMap<String, Entry>()
+    /** Private connections open right now (see [acquire]). Guarded by [lock]. */
+    private var privateOpen = 0
     /** Connection name to whether its last connect failed because the host key changed. */
     private val keyChanged = ConcurrentHashMap<String, Boolean>()
 
@@ -48,6 +50,7 @@ class McpSessionPool(
             lock.withLock {
                 entry.users--
                 if (!entry.shared) {
+                    privateOpen--
                     entry.client.shutdown()
                     return@withLock
                 }
@@ -67,7 +70,9 @@ class McpSessionPool(
             }
             // In use by other calls, and alive: leave it open for them, and connect privately for this call.
             if (e.users > 0 && e.client.activeSession() != null) {
+                if (privateOpen >= MAX_PRIVATE_CONNECTIONS) return null
                 val client = connectNew(conn, auth) ?: return null
+                privateOpen++
                 return Entry(conn, auth, client, shared = false).also { it.users = 1 }
             }
             evict(e)
@@ -104,5 +109,10 @@ class McpSessionPool(
     private fun evict(e: Entry) {
         if (entries[e.conn.name] === e) entries.remove(e.conn.name)
         e.client.shutdown()
+    }
+
+    private companion object {
+        /** Connections opened beside a busy shared session. More than this and the call is refused. */
+        const val MAX_PRIVATE_CONNECTIONS = 2
     }
 }

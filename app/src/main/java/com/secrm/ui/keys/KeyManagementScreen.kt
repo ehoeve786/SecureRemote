@@ -237,9 +237,14 @@ private fun KeyImportSheet(
 
             if (initial == null) {
                 Text("Private key", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                val notAKey = pem.isNotBlank() && !isPrivateKeyPem(pem)
                 OutlinedTextField(pem, { pem = it },
                     label = { Text("Paste PEM") },
                     placeholder = { Text("-----BEGIN OPENSSH PRIVATE KEY-----") },
+                    isError = notAKey,
+                    supportingText = {
+                        if (notAKey) Text("Not a private key. Paste an OpenSSH or PEM private key block.")
+                    },
                     minLines = 4, maxLines = 8,
                     // The key is secret material: keep it out of the IME and out of plain view.
                     keyboardOptions = KeyboardOptions(autoCorrect = false),

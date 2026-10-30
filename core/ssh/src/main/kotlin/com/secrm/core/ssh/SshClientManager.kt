@@ -12,6 +12,7 @@ import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
+import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.concurrent.atomic.AtomicBoolean
 import java.nio.charset.StandardCharsets
@@ -94,6 +95,10 @@ class SshClientManager {
 
     /** A forward's listener on the phone, and the job that accepts its clients. */
     private class Listener(val server: ServerSocket, val job: Job)
+
+    private companion object {
+        const val MAX_FORWARD_CLIENTS = 16
+    }
     private val listeners = HashMap<Int, Listener>()
     private val random = SecureRandom()
 
@@ -112,10 +117,27 @@ class SshClientManager {
             server.close()
             throw e
         }
+        // Each client holds a thread for up to its preamble timeout, so the number at once is capped.
+        val clients = java.util.concurrent.atomic.AtomicInteger()
         val job = scope.launch {
             while (isActive) {
                 val client = try { server.accept() } catch (e: IOException) { break }
-                launch(Dispatchers.IO) { relay(s, client, host, port, token) }
+                if (clients.incrementAndGet() > MAX_FORWARD_CLIENTS) {
+                    clients.decrementAndGet()
+                    client.close()
+                    continue
+                }
+                launch(Dispatchers.IO) {
+                    try {
+                        relay(s, client, host, port, token)
+                    } catch (e: Exception) {
+                        // A refused or unreachable target must not reach the app's uncaught handler.
+                        Log.w("SSH", "forward to $host:$port failed: ${e.javaClass.simpleName}")
+                    } finally {
+                        client.close()
+                        clients.decrementAndGet()
+                    }
+                }
             }
         }
         synchronized(listeners) { listeners[localPort] = Listener(server, job) }
@@ -127,7 +149,8 @@ class SshClientManager {
     private fun relay(s: Session, client: Socket, host: String, port: Int, token: String) {
         client.use { c ->
             c.soTimeout = 10_000
-            if (readLine(c.getInputStream(), token.length + 2) != token) return
+            val given = readLine(c.getInputStream(), token.length + 2)
+            if (!MessageDigest.isEqual(given.toByteArray(), token.toByteArray())) return
             c.soTimeout = 0
             val ch = s.openChannel("direct-tcpip") as ChannelDirectTCPIP
             ch.setHost(host)
@@ -376,7 +399,10 @@ class SshClientManager {
             val done = AtomicBoolean(false)
             val watcher = launch(start = CoroutineStart.UNDISPATCHED) {
                 try { awaitCancellation() } finally {
-                    if (pty && !done.get()) runCatching { ch.outputStream.write(0x03); ch.outputStream.flush() }
+                    if (pty && !done.get()) {
+                        Thread { runCatching { ch.outputStream.write(0x03); ch.outputStream.flush() } }
+                            .apply { isDaemon = true; start() }.join(500)
+                    }
                     ch.disconnect()
                 }
             }
