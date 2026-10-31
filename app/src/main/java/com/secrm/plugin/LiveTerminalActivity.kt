@@ -1,5 +1,7 @@
 package com.secrm.plugin
 
+import com.secrm.SecureRemoteApp
+import com.secrm.ui.applyScreenshotPolicy
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
@@ -42,8 +44,8 @@ class LiveTerminalActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Command output is shown here, so keep it out of screenshots and the recent-apps preview.
-        window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
+        // Command output is shown here, so it stays out of screenshots and the recent-apps preview unless allowed in Settings.
+        window.applyScreenshotPolicy((application as SecureRemoteApp).ui.allowScreenshots)
         // Gone once taken: a command that already finished, or a screen already open, has nothing to show.
         val output = LiveCommands.take(intent.getStringExtra(EXTRA_ID).orEmpty()) ?: run { finish(); return }
         val title = intent.getStringExtra(EXTRA_TITLE).orEmpty()
