@@ -72,7 +72,10 @@ class TerminalBridge private constructor(
         initialRows = 40,
         initialCols = 120,
         onKeyboardInput = ::send,
-        onResize = { ssh?.resizePty(it.columns, it.rows, it.widthPixels, it.heightPixels) },
+        // On the writer thread, as keystrokes are: onResize runs on the main thread, where Android refuses network
+        // I/O. The refused write left the SSH cipher and sequence number one packet ahead of what was sent, so the
+        // server dropped the session at the next packet.
+        onResize = { d -> writer.execute { ssh?.resizePty(d.columns, d.rows, d.widthPixels, d.heightPixels) } },
     )
 
     private var started: Boolean? = null
