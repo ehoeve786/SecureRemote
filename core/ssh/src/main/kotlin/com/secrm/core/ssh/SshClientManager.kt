@@ -344,7 +344,8 @@ class SshClientManager {
         if (cols < 1 || rows < 1) return
         if (sentPtySize == cols to rows) return
         sentPtySize = cols to rows
-        runCatching { shell?.setPtySize(cols, rows, w, h) }
+        // Pixel size 0 x 0, as most clients send: the C3X's session dropped soon after a resize that carried pixels.
+        runCatching { shell?.setPtySize(cols, rows, 0, 0) }
     }
 
     suspend fun ensureShell(): Boolean = withContext(Dispatchers.IO) {
