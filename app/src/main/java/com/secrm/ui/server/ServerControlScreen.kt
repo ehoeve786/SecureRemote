@@ -87,6 +87,14 @@ private fun AppearanceSection(ui: com.secrm.data.UiPrefs) {
                     ) { Text(m.name) }
                 }
             }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Allow screenshots", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+                    Text("Off keeps tokens, keys and terminal output out of screenshots, recordings and the recent-apps preview.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Switch(ui.allowScreenshots, ui::chooseAllowScreenshots)
+            }
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("Match system colours", style = MaterialTheme.typography.bodyLarge)

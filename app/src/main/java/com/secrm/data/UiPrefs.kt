@@ -15,6 +15,11 @@ class UiPrefs(context: Context) {
     var dynamicColor by mutableStateOf(p.getBoolean("dynamic", false))
         private set
 
+    /** Off by default: screenshots, recordings and the recent-apps preview show nothing from the app. */
+    var allowScreenshots by mutableStateOf(p.getBoolean("screenshots", false))
+        private set
+
+    fun chooseAllowScreenshots(on: Boolean) { allowScreenshots = on; p.edit().putBoolean("screenshots", on).apply() }
     fun chooseMode(m: ThemeMode) { mode = m; p.edit().putString("mode", m.name).apply() }
     fun chooseDynamicColor(on: Boolean) { dynamicColor = on; p.edit().putBoolean("dynamic", on).apply() }
 }
