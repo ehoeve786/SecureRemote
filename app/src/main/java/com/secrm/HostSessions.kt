@@ -101,8 +101,14 @@ class HostSessions(private val app: SecureRemoteApp) {
 
     /** The key a host without one presents, for the owner to approve before connecting. Sends no credentials. */
     suspend fun scanKey(conn: SavedConnection): String? {
-        val probe = app.newClient()
-        return try { probe.scanHostKey(conn.host, conn.port, conn.via) } finally { probe.shutdown() }
+        // The same routes as a connect: the pinned route if there is one, else direct, then the fallback.
+        val routes = if (conn.via != null) listOf(conn.via) else listOfNotNull(null, conn.fallbackVia)
+        for (route in routes) {
+            val probe = app.newClient()
+            val key = try { probe.scanHostKey(conn.host, conn.port, route) } finally { probe.shutdown() }
+            if (key != null) return key
+        }
+        return null
     }
 
     fun close(name: String) {
