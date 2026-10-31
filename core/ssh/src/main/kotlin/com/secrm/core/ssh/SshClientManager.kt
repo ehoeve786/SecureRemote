@@ -336,12 +336,22 @@ class SshClientManager {
     /** JSch's recent log lines (info and above), for showing why a session ended. */
     fun recentLog(): String = synchronized(log) { log.joinToString("\n") }
 
-    fun resizePty(cols: Int, rows: Int, w: Int, h: Int) { runCatching { shell?.setPtySize(cols, rows, w, h) } }
+    /** The last size sent to the server for the shell; a keyboard or sheet animation resizes many times over. */
+    @Volatile private var sentPtySize: Pair<Int, Int>? = null
+
+    /** Sends a window-change only when the character grid changed, and never a non-positive size. */
+    fun resizePty(cols: Int, rows: Int, w: Int, h: Int) {
+        if (cols < 1 || rows < 1) return
+        if (sentPtySize == cols to rows) return
+        sentPtySize = cols to rows
+        runCatching { shell?.setPtySize(cols, rows, w, h) }
+    }
 
     suspend fun ensureShell(): Boolean = withContext(Dispatchers.IO) {
         val s = session ?: return@withContext false
         // A fresh shell per terminal screen; closing the old one ends its reader.
         runCatching { shell?.disconnect() }; shell = null
+        sentPtySize = null
         var opened: ChannelShell? = null
         try {
             val ch = (s.openChannel("shell") as ChannelShell).also { opened = it }
