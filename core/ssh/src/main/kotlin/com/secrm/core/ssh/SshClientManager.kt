@@ -294,9 +294,11 @@ class SshClientManager {
                     })
             })
             if (cfg.auth is SshAuth.Password) s.setPassword((cfg.auth as SshAuth.Password).password)
-            // Probes the link every 15 s; three missed replies end the session, so a drop is noticed.
-            s.setServerAliveInterval(15_000)
-            s.setServerAliveCountMax(3)
+            // Probes the link every 5 s; six missed replies (30 s) end the session, so a drop is noticed. Under 10 s so a
+            // server with ClientAliveInterval 10 (the C3X) always sees traffic and never sends its own probe: the
+            // shell sessions there ended exactly when that first probe was due.
+            s.setServerAliveInterval(5_000)
+            s.setServerAliveCountMax(6)
 
             try { s.connect(if (cfg.via != null) maxOf(cfg.connectTimeoutMs, 30_000) else cfg.connectTimeoutMs) } catch (t: Throwable) {
                 val presented = s.hostKey?.key
