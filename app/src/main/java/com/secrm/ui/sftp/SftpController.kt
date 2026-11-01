@@ -175,7 +175,8 @@ class SftpController(
         val to = SftpClient.join(dir, name)
         if (e.isDir) {
             runCatching { client.mkdir(to) } // already there is fine
-            for (c in src.list(e.path)) { if (cancelRequested) return; importEntry(src, c, to, c.name) }
+            // Linked folders are skipped: a link to / or to a parent would copy the whole tree or loop.
+            for (c in src.list(e.path)) { if (cancelRequested) return; if (!(c.isDir && c.isLink)) importEntry(src, c, to, c.name) }
         } else {
             _state.update { it.copy(transfer = it.transfer?.copy(name = e.name, done = 0, total = e.size)) }
             val tmp = java.io.File.createTempFile("xfer", null, app.cacheDir)
@@ -224,7 +225,8 @@ class SftpController(
         if (e.isDir) {
             val d = parent.findFile(e.name)?.takeIf { it.isDirectory } ?: parent.createDirectory(e.name)
                 ?: error("Couldn't create ${e.name}")
-            for (c in client.list(e.path)) { if (cancelRequested) return; saveTo(c, d, setProgress) }
+            // Linked folders are skipped, as in importEntry.
+            for (c in client.list(e.path)) { if (cancelRequested) return; if (!(c.isDir && c.isLink)) saveTo(c, d, setProgress) }
         } else {
             val f = parent.createFile("application/octet-stream", e.name) ?: error("Couldn't create ${e.name}")
             try {
@@ -277,7 +279,12 @@ class SftpController(
             for (c in src.listFiles()) { if (cancelRequested) return; putTree(c, remote, c.name ?: continue) }
         } else {
             _state.update { it.copy(transfer = it.transfer?.copy(name = name, done = 0, total = src.length())) }
-            app.contentResolver.openInputStream(src.uri)!!.use { client.upload(it, remote, { cancelRequested }) { n -> progress(n) } }
+            try {
+                app.contentResolver.openInputStream(src.uri)!!.use { client.upload(it, remote, { cancelRequested }) { n -> progress(n) } }
+            } catch (t: Throwable) {
+                client.removeQuietly(remote) // no partial file left on the host
+                throw t
+            }
         }
     }
 

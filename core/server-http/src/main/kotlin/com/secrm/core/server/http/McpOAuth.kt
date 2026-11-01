@@ -44,13 +44,16 @@ class McpOAuth(
 
     private var pairing: String? = null
     private var pairingExpires = 0L
-    private var failures = 0
 
-    /** A new single-use pairing code, valid for 10 minutes or 5 wrong tries. */
+    /**
+     * A new single-use pairing code, valid for 10 minutes. Guessing is bounded by the route's rate limit
+     * (about 100 tries in that time against 31^8 codes), not a wrong-try lockout, which anyone who has
+     * the public URL could trip to cancel the owner's code.
+     */
     @Synchronized
     fun newPairingCode(): String =
         (1..8).map { ALPHABET[random.nextInt(ALPHABET.length)] }.joinToString("")
-            .also { pairing = it; pairingExpires = now() + 10 * MINUTE; failures = 0 }
+            .also { pairing = it; pairingExpires = now() + 10 * MINUTE }
 
     @Synchronized
     fun isValid(token: String) = tokens[sha(token)]?.let { it.kind == 'a' && it.expires > now() } == true
@@ -64,10 +67,7 @@ class McpOAuth(
     fun authorize(code: String, challenge: String, redirect: String): String? {
         codes.values.removeAll { it.expires < now() }
         val p = pairing
-        if (p == null || now() > pairingExpires || !MessageDigest.isEqual(code.trim().uppercase().toByteArray(), p.toByteArray())) {
-            if (++failures >= 5) pairing = null
-            return null
-        }
+        if (p == null || now() > pairingExpires || !MessageDigest.isEqual(code.trim().uppercase().toByteArray(), p.toByteArray())) return null
         pairing = null
         return token().also { codes[it] = Code(challenge, redirect, now() + MINUTE) }
     }

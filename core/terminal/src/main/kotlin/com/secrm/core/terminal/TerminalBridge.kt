@@ -12,7 +12,9 @@ import java.io.InputStream
 import java.io.OutputStream
 import org.connectbot.terminal.Terminal
 import org.connectbot.terminal.TerminalEmulatorFactory
-import java.util.concurrent.Executors
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 
 /** Pipes an SSH shell channel into ConnectBot termlib's emulator. */
@@ -34,7 +36,8 @@ class TerminalBridge private constructor(
     /** Called once the output ends (the shell or command closed), from the reader thread. */
     @Volatile var onEnd: (() -> Unit)? = null
 
-    private val writer = Executors.newSingleThreadExecutor()
+    // One thread at most, in order, that exits when idle: a bridge is replaced on every reconnect and never shut down.
+    private val writer = ThreadPoolExecutor(0, 1, 30, TimeUnit.SECONDS, LinkedBlockingQueue<Runnable>())
     @Volatile private var out: OutputStream? = null
 
     // Raw session output (last ~256 KB) and where it stood when Enter was last pressed, for copying

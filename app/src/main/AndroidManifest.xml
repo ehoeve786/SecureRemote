@@ -50,6 +50,7 @@
             android:name=".plugin.UnlockActivity"
             android:exported="false"
             android:excludeFromRecents="true"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden"
             android:theme="@android:style/Theme.Translucent.NoTitleBar" />
         <receiver
             android:name=".plugin.FireSettingReceiver"

@@ -41,11 +41,11 @@ class McpOAuthTest {
         assertNull(pair(oauth, pairing))
     }
 
-    @Test fun pairingLocksAfterFiveWrongGuesses() {
+    @Test fun wrongGuessesDoNotCancelThePairingCode() {
         val oauth = newOAuth()
         val pairing = oauth.newPairingCode()
         repeat(5) { assertNull(pair(oauth, "WRONG")) }
-        assertNull("correct code must fail once locked", pair(oauth, pairing))
+        requireNotNull(pair(oauth, pairing))
     }
 
     @Test fun pairingCodeIsCaseAndWhitespaceTolerant() {

@@ -187,7 +187,16 @@ fun DashboardScreen(
             onDismiss = { showForm = false; editing = null },
             onSave = { conn ->
                 // A corrupt store throws from upsert; report it instead of crashing the app.
-                val saved = runCatching { app.connections.upsert(conn) }
+                val old = editing
+                val saved = runCatching {
+                    // Saved by name: a taken name would silently replace that host and its trusted key.
+                    require(old?.name == conn.name || connections.none { it.name == conn.name }) { "a host named ${conn.name} already exists" }
+                    app.connections.upsert(conn)
+                    if (old != null && old.name != conn.name) {
+                        app.connections.delete(old.name)
+                        app.sessions.close(old.name)
+                    }
+                }
                     .onFailure { Toast.makeText(activity, "Couldn't save host: ${it.message}", Toast.LENGTH_LONG).show() }
                     .isSuccess
                 if (saved) {
@@ -259,7 +268,7 @@ private fun ConnectionCard(
                 Tag(when (conn.authMethod) { AuthMethod.PASSWORD -> "Password"; AuthMethod.SAVED_KEY -> "Key"; AuthMethod.AGENT -> "Bitwarden" }, container = tagBg)
                 Tag(when {
                     conn.allowMcpExec -> "MCP exec"
-                    conn.allowMcpRead -> "MCP read-only"
+                    conn.allowMcpRead -> "MCP listed"
                     else -> "Hidden from MCP"
                 }, container = tagBg)
             }
@@ -305,7 +314,7 @@ private fun ConnectionFormSheet(
     var keyId by remember { mutableStateOf(initial?.keyId) }
     var via by remember { mutableStateOf(initial?.via) }
     var canExec by remember { mutableStateOf(initial?.allowMcpExec ?: false) }
-    var canRead by remember { mutableStateOf(initial?.allowMcpRead ?: true) }
+    var canRead by remember { mutableStateOf(initial?.allowMcpRead ?: false) }
 
     val savedKeys = remember { app.keys.list() }
     var bwKeys by remember { mutableStateOf(app.vault.keys) }
@@ -435,8 +444,8 @@ private fun ConnectionFormSheet(
                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
             )
             ListItem(
-                headlineContent = { Text("Allow ssh.read_file") },
-                supportingContent = { Text("Claude can read files on this host") },
+                headlineContent = { Text("Show to MCP clients") },
+                supportingContent = { Text("Claude can see this host's name, address and user") },
                 trailingContent = { Switch(canRead, { canRead = it }) },
                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
             )

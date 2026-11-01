@@ -13,7 +13,9 @@ import java.io.File
 @Serializable
 data class AuditEntry(
     val ts: String, val tool: String, val argsRedacted: String,
-    val outcome: String, val durationMs: Long
+    val outcome: String, val durationMs: Long,
+    /** Which MCP client made the call (a hash of its bearer); empty in entries from older versions. */
+    val client: String = ""
 )
 
 class McpAuditLog(context: Context) {

@@ -27,6 +27,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.UUID
 
@@ -108,7 +109,10 @@ class RunCommandService : Service() {
             if (conn.authMethod == AuthMethod.AGENT && !unlockVault(app)) return failure("Bitwarden is locked. Unlock it and run again.")
             val auth = authFor(conn) ?: return failure("No key or vault item for ${conn.name}")
             if (!ssh.connectSaved(conn, auth, app.connections)) return failure("Could not connect to ${conn.host}")
-            val r = ssh.execResult(s.command, live?.sink(red = false), live?.sink(red = true))
+            // Capped at the hour the macro host is asked to wait, so a command that never exits doesn't run the service forever.
+            val r = withTimeout(PluginProtocol.REQUESTED_TIMEOUT_NEVER.toLong()) {
+                ssh.execResult(s.command, live?.sink(red = false), live?.sink(red = true))
+            }
             PluginProtocol.RESULT_OK to Bundle().apply {
                 putString(PluginProtocol.VAR_STDOUT, r.stdout)
                 putString(PluginProtocol.VAR_STDERR, r.stderr)

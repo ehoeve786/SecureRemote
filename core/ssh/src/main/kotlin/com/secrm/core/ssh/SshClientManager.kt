@@ -130,7 +130,7 @@ class SshClientManager {
                         null,
                         a.pem.toByteArray(StandardCharsets.US_ASCII),
                         null,
-                        a.passphrase?.toByteArray(StandardCharsets.US_ASCII)
+                        a.passphrase?.toByteArray(StandardCharsets.UTF_8)
                     )
                 }
                 is SshAuth.Password -> { /* handled below */ }
@@ -171,7 +171,8 @@ class SshClientManager {
             // A replaced session must not stay open: its shell and channels would leak.
             cleanup()
             session = s
-            lastCfg = cfg
+            // With the key just seen, so aux sessions (SFTP) are checked against it even on a first connect.
+            lastCfg = cfg.copy(hostKey = cfg.hostKey ?: s.hostKey?.key)
             hostKey = s.hostKey?.key
             target = "${cfg.username}@${cfg.host}"
             connectedName = cfg.name

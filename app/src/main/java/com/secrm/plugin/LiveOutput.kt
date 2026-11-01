@@ -10,9 +10,10 @@ private const val CR = '\r'.code.toByte()
 private const val LF = '\n'.code.toByte()
 private val RED = "\u001b[31m".toByteArray()
 private val RESET = "\u001b[0m".toByteArray()
+private const val MAX_QUEUED = 4 shl 20
 
 /**
- * A running plugin command's output, for a live terminal to read. Holds everything until it is read,
+ * A running plugin command's output, for a live terminal to read. Holds up to [MAX_QUEUED] until read,
  * so a terminal opened late still shows the start. [finish] ends it.
  */
 class LiveOutput : InputStream() {
@@ -20,13 +21,15 @@ class LiveOutput : InputStream() {
     private var current = ByteArray(0)
     private var pos = 0
     private var done = false
+    /** Bytes written but not yet read; past [MAX_QUEUED] nothing is reading, so new output is dropped. */
+    private val queued = java.util.concurrent.atomic.AtomicInteger()
 
     /** Where the command's output goes: LF becomes CRLF for the terminal, and [red] shows it in red. */
     fun sink(red: Boolean): OutputStream = object : OutputStream() {
         override fun write(b: Int) = write(byteArrayOf(b.toByte()), 0, 1)
 
         override fun write(b: ByteArray, off: Int, len: Int) {
-            if (len <= 0) return
+            if (len <= 0 || queued.get() > MAX_QUEUED) return
             val o = ByteArrayOutputStream(len + 16)
             if (red) o.write(RED)
             for (i in off until off + len) {
@@ -34,6 +37,7 @@ class LiveOutput : InputStream() {
                 o.write(b[i].toInt())
             }
             if (red) o.write(RESET)
+            queued.addAndGet(o.size())
             chunks.put(o.toByteArray())
         }
     }
@@ -51,6 +55,7 @@ class LiveOutput : InputStream() {
         if (pos >= current.size) {
             if (done) return -1
             current = chunks.take()
+            queued.addAndGet(-current.size)
             pos = 0
             if (current.isEmpty()) { done = true; return -1 }
         }

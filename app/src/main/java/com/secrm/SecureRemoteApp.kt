@@ -70,7 +70,8 @@ class SecureRemoteApp : Application() {
                     tool = tool,
                     argsRedacted = redacted(args).toString(),
                     outcome = if (result.isError) "error" else "ok",
-                    durationMs = durationNanos / 1_000_000
+                    durationMs = durationNanos / 1_000_000,
+                    client = s.id
                 ))
             }
         })
