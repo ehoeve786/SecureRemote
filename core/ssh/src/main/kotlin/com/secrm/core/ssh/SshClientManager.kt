@@ -93,8 +93,8 @@ class SshClientManager {
     private val _forwards = MutableStateFlow<Map<Int, String>>(emptyMap())
     val forwards: StateFlow<Map<Int, String>> = _forwards.asStateFlow()
 
-    /** A forward's listener on the phone, and the job that accepts its clients. */
-    private class Listener(val server: ServerSocket, val job: Job)
+    /** A forward's listener on the phone. Closing it ends the thread that accepts its clients. */
+    private class Listener(val server: ServerSocket)
 
     private companion object {
         const val MAX_FORWARD_CLIENTS = 16
@@ -104,11 +104,12 @@ class SshClientManager {
 
     /**
      * Forwards [localPort] on this phone's loopback to [host]:[port] beyond the server. Throws if the port is taken.
-     * Each client must send the returned token as its first line; a client that does not is dropped before any bytes are relayed.
+     * With [requireToken], each client must send the returned token as its first line; a client that does not is
+     * dropped before any bytes are relayed. Without it (the owner's own forwards) any client is relayed and null is returned.
      */
-    suspend fun addLocalForward(localPort: Int, host: String, port: Int): String = withContext(Dispatchers.IO) {
+    suspend fun addLocalForward(localPort: Int, host: String, port: Int, requireToken: Boolean = true): String? = withContext(Dispatchers.IO) {
         val s = activeSession() ?: error("Not connected")
-        val token = ByteArray(16).also(random::nextBytes).joinToString("") { "%02x".format(it) }
+        val token = if (requireToken) ByteArray(16).also(random::nextBytes).joinToString("") { "%02x".format(it) } else null
         val server = ServerSocket()
         try {
             server.reuseAddress = true
@@ -119,15 +120,17 @@ class SshClientManager {
         }
         // Each client holds a thread for up to its preamble timeout, so the number at once is capped.
         val clients = java.util.concurrent.atomic.AtomicInteger()
-        val job = scope.launch {
-            while (isActive) {
+        // Own threads, not the shared IO pool: accept and relay block for as long as the forward is open, and
+        // enough forwards would otherwise take every IO thread the app's SSH, SFTP and MCP work runs on.
+        kotlin.concurrent.thread(isDaemon = true, name = "ssh-forward-$localPort") {
+            while (true) {
                 val client = try { server.accept() } catch (e: IOException) { break }
                 if (clients.incrementAndGet() > MAX_FORWARD_CLIENTS) {
                     clients.decrementAndGet()
                     client.close()
                     continue
                 }
-                launch(Dispatchers.IO) {
+                kotlin.concurrent.thread(isDaemon = true, name = "ssh-forward-$localPort-client") {
                     try {
                         relay(s, client, host, port, token)
                     } catch (e: Exception) {
@@ -140,18 +143,20 @@ class SshClientManager {
                 }
             }
         }
-        synchronized(listeners) { listeners[localPort] = Listener(server, job) }
+        synchronized(listeners) { listeners[localPort] = Listener(server) }
         _forwards.update { it + (localPort to "$host:$port") }
         token
     }
 
     /** Serves one client: checks the token line, then copies bytes both ways through a direct-tcpip channel. */
-    private fun relay(s: Session, client: Socket, host: String, port: Int, token: String) {
+    private fun relay(s: Session, client: Socket, host: String, port: Int, token: String?) {
         client.use { c ->
-            c.soTimeout = 10_000
-            val given = readLine(c.getInputStream(), token.length + 2)
-            if (!MessageDigest.isEqual(given.toByteArray(), token.toByteArray())) return
-            c.soTimeout = 0
+            if (token != null) {
+                c.soTimeout = 10_000
+                val given = readLine(c.getInputStream(), token.length + 2)
+                if (!MessageDigest.isEqual(given.toByteArray(), token.toByteArray())) return
+                c.soTimeout = 0
+            }
             val ch = s.openChannel("direct-tcpip") as ChannelDirectTCPIP
             ch.setHost(host)
             ch.setPort(port)
@@ -188,7 +193,6 @@ class SshClientManager {
     }
 
     private fun closeListener(l: Listener) {
-        l.job.cancel()
         runCatching { l.server.close() }
     }
 

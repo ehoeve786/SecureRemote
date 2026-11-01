@@ -36,6 +36,10 @@ class JobStore(private val store: EncryptedConfigStore) {
     @Synchronized
     fun delete(id: String) = write(list().filterNot { it.id == id })
 
+    /** Jobs name their host, so a renamed host takes its jobs with it. */
+    @Synchronized
+    fun renameConnection(from: String, to: String) = write(list().map { if (it.connection == from) it.copy(connection = to) else it })
+
     @Synchronized
     fun recordRun(id: String, at: Long, result: String) = write(list().map {
         if (it.id == id) it.copy(lastRun = at, lastResult = result.take(300)) else it

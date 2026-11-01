@@ -76,7 +76,8 @@ fun PortForwardSheet(ssh: SshClientManager, onDismiss: () -> Unit) {
                             lp == null || lp !in 1024..65535 -> error = "Local port must be 1024–65535 (no root on Android)."
                             rp == null || rp !in 1..65535 -> error = "Remote port must be 1–65535."
                             else -> scope.launch {
-                                runCatching { ssh.addLocalForward(lp, remoteHost, rp) }
+                                // The owner's forward is for any app on this phone (a browser, a database client), which cannot send a token.
+                                runCatching { ssh.addLocalForward(lp, remoteHost, rp, requireToken = false) }
                                     .onSuccess { error = null; localPort = ""; remotePort = "" }
                                     .onFailure { error = "Could not open: ${it.message ?: "port in use"}" }
                             }

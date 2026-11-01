@@ -41,11 +41,11 @@ class McpOAuthTest {
         assertNull(pair(oauth, pairing))
     }
 
-    @Test fun pairingLocksAfterFiveWrongGuesses() {
+    @Test fun wrongGuessesDoNotCancelThePairingCode() {
         val oauth = newOAuth()
         val pairing = oauth.newPairingCode()
         repeat(5) { assertNull(pair(oauth, "WRONG")) }
-        assertNull("correct code must fail once locked", pair(oauth, pairing))
+        requireNotNull(pair(oauth, pairing))
     }
 
     @Test fun pairingCodeIsCaseAndWhitespaceTolerant() {
@@ -103,6 +103,17 @@ class McpOAuthTest {
         // The first response was lost, so the client sends the same refresh token again.
         val (access3, _) = requireNotNull(oauth.token(mapOf("grant_type" to "refresh_token", "refresh_token" to refresh1)))
         assertTrue("a benign retry keeps the session", oauth.isValid(access3))
+    }
+
+    @Test fun retryWithinGraceWindowLeavesOnlyOnePairLive() {
+        val oauth = newOAuth(clock = Clock())
+        val (_, refresh1) = requireNotNull(exchange(oauth, requireNotNull(pair(oauth, oauth.newPairingCode()))))
+        val (access2, refresh2) = requireNotNull(oauth.token(mapOf("grant_type" to "refresh_token", "refresh_token" to refresh1)))
+        // A stolen copy of refresh1 is replayed within the grace window.
+        val (access3, _) = requireNotNull(oauth.token(mapOf("grant_type" to "refresh_token", "refresh_token" to refresh1)))
+        assertFalse("the first pair's access token is gone", oauth.isValid(access2))
+        assertNull("its refresh token no longer works", oauth.token(mapOf("grant_type" to "refresh_token", "refresh_token" to refresh2)))
+        assertFalse("using it is treated as theft and revokes the family", oauth.isValid(access3))
     }
 
     @Test fun omittedRedirectUriIsRejectedWhenAuthorizeSentOne() {

@@ -81,6 +81,7 @@ internal fun Route.oauthRoutes(oauth: McpOAuth, mcpPath: String) {
     val registerLimit = RateLimit(max = 20)
     // Per client_id, so one client's burst cannot slow the others' refreshes.
     val tokenLimit = ClientRateLimits(max = 60)
+    val pairingLimit = RateLimit(max = 10) // the only bound on guessing a pairing code (see McpOAuth.newPairingCode)
     get("/.well-known/oauth-protected-resource/{rest...}") {
         call.json {
             put("resource", call.base() + mcpPath)
@@ -129,6 +130,7 @@ internal fun Route.oauthRoutes(oauth: McpOAuth, mcpPath: String) {
     }
     post("/authorize") {
         val p = call.boundedText()?.let { parseQueryString(it) } ?: return@post call.respond(HttpStatusCode.PayloadTooLarge)
+        if (!pairingLimit.allow()) return@post call.respondText("Too many tries. Wait a minute and try again.", status = HttpStatusCode.TooManyRequests)
         val redirect = p["redirect_uri"]
         if (!McpOAuth.allowedRedirect(redirect)) return@post call.respondText("Only Claude can connect", status = HttpStatusCode.BadRequest)
         // PKCE is mandatory: without a challenge the code could never be redeemed.

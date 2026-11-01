@@ -9,7 +9,10 @@ import java.util.UUID
 @Serializable
 data class Snippet(val id: String, val name: String, val command: String)
 
-/** Reusable commands for the terminal, kept in the encrypted config. Inserted, never run: the owner presses Enter. */
+/**
+ * Reusable commands, kept in the encrypted config. In the terminal they are inserted, not run: the owner presses
+ * Enter. MCP agents with exec access to a host can also run them there by name (ssh.run_snippet).
+ */
 class SnippetStore(private val store: EncryptedConfigStore) {
     @Synchronized
     fun list(): List<Snippet> = store.get(KEY)?.let {

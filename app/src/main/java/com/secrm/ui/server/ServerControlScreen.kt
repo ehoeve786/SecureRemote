@@ -334,7 +334,7 @@ private fun McpSection(app: SecureRemoteApp, onOpenAudit: () -> Unit) {
             Spacer(Modifier.height(Space.md))
             Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                 PillButton("Pair Claude", PillStyle.Primary, Modifier.weight(1f)) { pairing = app.oauth.newPairingCode() }
-                PillButton("Disconnect Claude", PillStyle.Ghost, Modifier.weight(1f)) { app.oauth.revokeAll(); pairing = null }
+                PillButton("Disconnect Claude", PillStyle.Ghost, Modifier.weight(1f)) { app.oauth.revokeAll(); app.mcpSessions.closeAll(); pairing = null }
             }
             pairing?.let {
                 Text("Pairing code (10 min, single use)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -523,6 +523,7 @@ private fun AgentTokensSection(app: SecureRemoteApp) {
             }
             if (!a.revoked) TextButton(onClick = {
                 app.agents.revoke(a.id)
+                app.mcpSessions.closeAll() // sessions are shared, so this also ends other clients' forwards
                 agents = app.agents.list()
             }) { Text("Revoke", color = MaterialTheme.colorScheme.error) }
         }

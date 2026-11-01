@@ -25,6 +25,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 import java.util.UUID
 
 /**
@@ -102,7 +103,10 @@ class RunCommandService : Service() {
             val auth = authFor(conn) ?: return failure("No saved key for ${conn.name}")
             secrets = Redact.secretsOf(auth)
             if (!ssh.connectSaved(conn, auth, app.connections)) return failure("Could not connect to ${conn.host}")
-            val r = ssh.execResult(s.command, live?.sink(red = false), live?.sink(red = true))
+            // Capped at the hour the macro host is asked to wait, so a command that never exits doesn't run the service forever.
+            val r = withTimeout(PluginProtocol.REQUESTED_TIMEOUT_NEVER.toLong()) {
+                ssh.execResult(s.command, live?.sink(red = false), live?.sink(red = true))
+            }
             PluginProtocol.RESULT_OK to Bundle().apply {
                 putString(PluginProtocol.VAR_STDOUT, r.stdout)
                 putString(PluginProtocol.VAR_STDERR, r.stderr)

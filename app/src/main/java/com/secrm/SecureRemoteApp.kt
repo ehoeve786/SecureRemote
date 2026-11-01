@@ -44,6 +44,8 @@ class SecureRemoteApp : Application() {
     lateinit var agents: AgentTokens; private set
     lateinit var snippets: SnippetStore; private set
     lateinit var jobs: JobStore; private set
+    /** MCP's pooled SSH sessions; closed, with their forwards, when MCP is stopped or a client is revoked. */
+    lateinit var mcpSessions: com.secrm.core.ssh.tools.McpSessionPool; private set
     /** The connected hosts, each with its own shell and file browser. */
     val sessions by lazy { HostSessions(this) }
 
@@ -95,7 +97,7 @@ class SecureRemoteApp : Application() {
                 McpServerService.noteActivity()
             }
         })
-        SshTools.register(dispatcher, connections, newClient()) {
+        mcpSessions = SshTools.register(dispatcher, connections, newClient()) {
             snippets.list().map { NamedCommand(it.name, it.command) }
         }
         watchNetwork()

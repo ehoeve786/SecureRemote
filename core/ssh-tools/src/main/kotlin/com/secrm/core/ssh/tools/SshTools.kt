@@ -15,6 +15,8 @@ object SshTools {
 
     /** The read-only tools run fixed, short commands, so they get a short leash. */
     private const val READ_TIMEOUT_MS = 15_000L
+    /** Forwards MCP may keep open on one connection; each holds a listener and up to 16 client threads. */
+    private const val MAX_FORWARDS = 8
     private const val MAX_READ_BYTES = 1 shl 20
     /** [len] bytes, less a trailing UTF-8 character that the cut would split. */
     private fun utf8SafeLength(b: ByteArray, len: Int): Int {
@@ -46,7 +48,7 @@ object SshTools {
         saved: SavedConnections,
         ssh: SshClientManager,
         commands: () -> List<NamedCommand> = { emptyList() },
-    ) {
+    ): McpSessionPool {
         val pool = McpSessionPool(CoroutineScope(Dispatchers.IO + SupervisorJob()), saved) {
             // A separate client, so this neither replaces nor drops the app's live session.
             SshClientManager().apply { proxy = ssh.proxy }
@@ -155,6 +157,8 @@ object SshTools {
                         "Use a remote port from 1 to 65535.", "Remote port out of range: $port")
                     // A forward needs only read access: it runs no command on the server.
                     return onConnection(saved, pool, args, Need.READ, READ_TIMEOUT_MS) { client ->
+                        if (client.forwards.value.size >= MAX_FORWARDS) return@onConnection ToolResult.error("too_many_forwards",
+                            "Close one with ssh.close_forward first.", "This connection already has $MAX_FORWARDS forwards open.")
                         val token = client.addLocalForward(local, host, port)
                         ToolResult.ok(buildJsonObject {
                             put("local", "127.0.0.1:$local")
@@ -181,7 +185,8 @@ object SshTools {
             object : ToolHandler {
                 override suspend fun call(session: Session, args: JsonObject): ToolResult {
                     val local = args["local_port"]?.jsonPrimitive?.intOrNull ?: return missingArg("local_port")
-                    return onConnection(saved, pool, args, Need.EXEC, READ_TIMEOUT_MS) { client ->
+                    // The same access as opening one, so an agent can always close what it opened.
+                    return onConnection(saved, pool, args, Need.READ, READ_TIMEOUT_MS) { client ->
                         client.removeLocalForward(local)
                         ToolResult.ok("Closed 127.0.0.1:$local")
                     }
@@ -347,6 +352,7 @@ object SshTools {
                 }
             }
         )
+        return pool
     }
 
     private const val CONNECTION_DOC = "Saved connection name, from ssh.list_connections."

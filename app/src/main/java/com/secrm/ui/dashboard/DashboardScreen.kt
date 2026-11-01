@@ -205,7 +205,17 @@ fun DashboardScreen(
             onDismiss = { showForm = false; editing = null },
             onSave = { conn ->
                 // A corrupt store throws from upsert; report it instead of crashing the app.
-                val saved = runCatching { app.connections.upsert(conn) }
+                val old = editing
+                val saved = runCatching {
+                    // Saved by name: a taken name would silently replace that host and its trusted key.
+                    require(old?.name == conn.name || connections.none { it.name == conn.name }) { "a host named ${conn.name} already exists" }
+                    app.connections.upsert(conn)
+                    if (old != null && old.name != conn.name) {
+                        app.connections.delete(old.name)
+                        app.sessions.close(old.name)
+                        app.jobs.renameConnection(old.name, conn.name)
+                    }
+                }
                     .onFailure { Toast.makeText(activity, "Couldn't save host: ${it.message}", Toast.LENGTH_LONG).show() }
                     .isSuccess
                 if (saved) {

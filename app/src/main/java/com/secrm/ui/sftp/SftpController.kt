@@ -302,10 +302,15 @@ class SftpController(
         }
     }
 
-    /** Remote name for an upload's partial file: the same source and size always map to the same name. */
+    /**
+     * Remote name for an upload's partial file: the same source, size and modified time always map to the same name,
+     * so a file edited since the last attempt starts over instead of resuming onto old bytes. A provider that
+     * reports no modified time gives 0, and then only source and size are matched, as before.
+     */
     private fun partialName(u: Uri, size: Long): String {
+        val modified = runCatching { DocumentFile.fromSingleUri(app, u)?.lastModified() }.getOrNull() ?: 0L
         val key = java.security.MessageDigest.getInstance("SHA-256")
-            .digest("$u|$size".toByteArray())
+            .digest("$u|$size|$modified".toByteArray())
             .take(8).joinToString("") { "%02x".format(it) }
         return ".secrm-$key.part"
     }
@@ -338,7 +343,12 @@ class SftpController(
             for (c in src.listFiles()) { if (cancelRequested) return; putTree(c, remote, safeName(c.name ?: continue)) }
         } else {
             _state.update { it.copy(transfer = it.transfer?.copy(name = name, done = 0, total = src.length())) }
-            app.contentResolver.openInputStream(src.uri)!!.use { client.upload(it, remote, { cancelRequested }) { n -> progress(n) } }
+            try {
+                app.contentResolver.openInputStream(src.uri)!!.use { client.upload(it, remote, { cancelRequested }) { n -> progress(n) } }
+            } catch (t: Throwable) {
+                client.removeQuietly(remote) // no partial file left on the host
+                throw t
+            }
         }
     }
 
