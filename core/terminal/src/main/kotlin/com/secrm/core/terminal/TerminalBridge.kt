@@ -13,6 +13,7 @@ import java.io.OutputStream
 import org.connectbot.terminal.Terminal
 import org.connectbot.terminal.TerminalEmulatorFactory
 import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.Semaphore
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
@@ -31,9 +32,14 @@ class TerminalBridge private constructor(
     companion object {
         /** A read-only terminal showing [feed]; keyboard input goes nowhere. */
         fun watching(feed: InputStream) = TerminalBridge(null, feed)
+
+        /** Output read from the network but not yet drawn. Past this the reader waits for the screen to catch up. */
+        private const val MAX_QUEUED_BYTES = 8 shl 20
+        /** Marks the end of the output in the queue. */
+        private val END = ByteArray(0)
     }
 
-    /** Called once the output ends (the shell or command closed), from the reader thread. */
+    /** Called once the output ends (the shell or command closed), from the drawing thread. */
     @Volatile var onEnd: (() -> Unit)? = null
 
     // One thread at most, in order, that exits when idle: a bridge is replaced on every reconnect and never shut down.
@@ -68,7 +74,10 @@ class TerminalBridge private constructor(
         initialRows = 40,
         initialCols = 120,
         onKeyboardInput = ::send,
-        onResize = { ssh?.resizePty(it.columns, it.rows, it.widthPixels, it.heightPixels) },
+        // On the writer thread, as keystrokes are: onResize runs on the main thread, where Android refuses network
+        // I/O. The refused write left the SSH cipher and sequence number one packet ahead of what was sent, so the
+        // server dropped the session at the next packet.
+        onResize = { d -> writer.execute { ssh?.resizePty(d.columns, d.rows, d.widthPixels, d.heightPixels) } },
     )
 
     private var started: Boolean? = null
@@ -86,27 +95,46 @@ class TerminalBridge private constructor(
             input = s.shellInputStream() ?: return false
             out = s.shellOutputStream()
         }
+        // Two threads: one only reads the network, one draws. The emulator's lock is also taken by resizes and
+        // snapshots, so a keyboard or sheet animation can hold it for a while. If the read waited on it, the SSH
+        // library's buffer would fill and it would stop answering the server's keepalives, and a server that
+        // probes often drops the session. The queue lets the read go on while the screen is busy.
+        val queue = LinkedBlockingQueue<ByteArray>()
+        val room = Semaphore(MAX_QUEUED_BYTES)
+        var why: Throwable? = null
         thread(isDaemon = true, name = "ssh-term-read") {
             val buf = ByteArray(8192)
-            val why = runCatching {
+            why = runCatching {
                 while (true) {
                     val n = input.read(buf)
                     if (n < 0) break
-                    emulator.writeInput(buf, 0, n)
-                    synchronized(log) {
-                        if (log.size() > 256 * 1024) log.toByteArray().let {
-                            val drop = it.size / 2
-                            log.reset(); log.write(it, drop, it.size - drop); mark = maxOf(0, mark - drop)
-                        }
-                        log.write(buf, 0, n)
-                    }
+                    room.acquire(n)
+                    queue.put(buf.copyOf(n))
                 }
             }.exceptionOrNull()
+            queue.put(END)
+        }
+        thread(isDaemon = true, name = "ssh-term-draw") {
+            while (true) {
+                val chunk = queue.take()
+                if (chunk === END) break
+                emulator.writeInput(chunk, 0, chunk.size)
+                room.release(chunk.size)
+                synchronized(log) {
+                    if (log.size() > 256 * 1024) log.toByteArray().let {
+                        val drop = it.size / 2
+                        log.reset(); log.write(it, drop, it.size - drop); mark = maxOf(0, mark - drop)
+                    }
+                    log.write(chunk, 0, chunk.size)
+                }
+            }
             if (s != null) {
                 // Say so instead of leaving a dead terminal that silently ignores typing.
                 note("connection closed" + (why?.let { ": $it" } ?: ""))
                 emulator.writeInput(("\u001b[90m" + s.recentLog().replace("\n", "\r\n") + "\u001b[0m\r\n").toByteArray())
             }
+            // The session's output is not kept after the connection ends.
+            synchronized(log) { log.reset(); mark = 0 }
             onEnd?.invoke()
         }
         return true

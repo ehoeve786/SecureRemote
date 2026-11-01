@@ -77,6 +77,20 @@ abstract class Tunnel(context: Context, private val scope: CoroutineScope, key: 
         }
     }
 
+    /**
+     * Brings an enabled tunnel back up after the network under it changed: a tunnel can read as Up on a
+     * network it no longer routes through. Does nothing if the owner turned the tunnel off.
+     */
+    @Synchronized
+    fun restart() {
+        if (!enabled) return
+        poller?.cancel()
+        poller = null
+        // Queued on the same serial dispatcher as the start that follows, so the stop runs first.
+        scope.launch(native) { runCatching { stopNative() } }
+        start()
+    }
+
     /** Stops but keeps the login or config. */
     @Synchronized
     fun stop() {

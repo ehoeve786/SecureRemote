@@ -2,6 +2,8 @@ package com.secrm.plugin
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import java.security.MessageDigest
 import android.os.Bundle
 
 /**
@@ -22,11 +24,25 @@ object PluginProtocol {
     /** Asks the host to wait this long (ms) for the action; the host may ignore it. */
     const val REQUESTED_TIMEOUT_NEVER = 3_600_000
 
-    /** Packages of the macro hosts this plugin talks to. Only these may receive results or open the editor. */
-    val HOST_PACKAGES = setOf(
-        "net.dinglisch.android.taskerm", // Tasker
-        "com.arlosoft.macrodroid", // MacroDroid
+    /**
+     * Macro hosts this plugin talks to, each with the SHA-256 digests (lowercase hex) of the signing
+     * certificates it must be signed with. Only these may receive results or open the editor.
+     */
+    val HOST_SIGNERS: Map<String, Set<String>> = mapOf(
+        "net.dinglisch.android.taskerm" to setOf("973fe25b9be28fb7436d49582b04277767c852539be31783d134a55621b6636d"), // Tasker
+        "com.arlosoft.macrodroid" to setOf("b40e273464148c85227ce46ba360096bf405dd93d70c14668a83d205e59ffdb1"), // MacroDroid
     )
+
+    /** True only if [pkg] is an installed host signed by one of its pinned certificates. The name alone is not enough. */
+    fun isGenuineHost(context: Context, pkg: String?): Boolean {
+        val pins = HOST_SIGNERS[pkg ?: return false] ?: return false
+        return runCatching {
+            val info = context.packageManager.getPackageInfo(pkg, PackageManager.GET_SIGNING_CERTIFICATES)
+            info.signingInfo?.apkContentsSigners.orEmpty().any { sig ->
+                MessageDigest.getInstance("SHA-256").digest(sig.toByteArray()).joinToString("") { "%02x".format(it) } in pins
+            }
+        }.getOrDefault(false)
+    }
 
     /** Output variables, named as termux-tasker names them so existing macros work unchanged. */
     const val VAR_STDOUT = "%stdout"
@@ -68,7 +84,7 @@ object PluginProtocol {
         // The completion intent is text from the sender, so it may only reach the host's own packages.
         // A selector or a target outside them would turn this into an intent redirect or a leak of the output.
         val pkg = completion.getStringExtra(CALL_PACKAGE) ?: completion.component?.packageName ?: completion.`package`
-        if (completion.selector != null || pkg == null || pkg !in HOST_PACKAGES) return
+        if (completion.selector != null || pkg == null || !isGenuineHost(context, pkg)) return
         completion.putExtra(EXTRA_RESULT_CODE, resultCode)
         vars?.let { completion.putExtra(EXTRA_VARIABLES, it) }
         val cls = completion.getStringExtra(CALL_SERVICE)
@@ -77,6 +93,8 @@ object PluginProtocol {
             if (completion.getBooleanExtra(CALL_FOREGROUND, false)) context.startForegroundService(completion)
             else context.startService(completion)
         } else {
+            // A component left over from the sender would take the broadcast to another package.
+            completion.component = null
             completion.`package` = pkg
             context.sendBroadcast(completion)
         }

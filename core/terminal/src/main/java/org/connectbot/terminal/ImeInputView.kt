@@ -177,13 +177,16 @@ internal class ImeInputView(
 
         val useFullEditor = isComposeModeActive && shortcutInputMode != ImeShortcutInputMode.TYPE_NULL
         if (useFullEditor) {
-            // Compose mode: allow voice input and IME suggestions.
-            // TYPE_CLASS_TEXT without NO_SUGGESTIONS keeps the suggestion strip (and its
-            // microphone button) visible. fullEditor=true makes BaseInputConnection provide
-            // a real Editable so getExtractedText() returns non-null (required by Gboard
-            // for voice input).
-            outAttrs.inputType = EditorInfo.TYPE_CLASS_TEXT
-            // Keep passphrases and passwords typed here out of the IME's learned dictionary.
+            // Compose mode: text typed here is a command, and the IME must not turn it into suggestions or
+            // learn it. NO_SUGGESTIONS turns off the suggestion strip, which is what would otherwise carry
+            // typed text into prediction and cloud suggestion services. fullEditor=true still gives the IME a
+            // real Editable, so getExtractedText() stays non-null for keyboards that need it.
+            //
+            // Limit: the active IME can still read this text through the input connection, and voice input
+            // (which needs the suggestion strip) is unavailable here. Using a password input type would hide the
+            // text from learning, but it would also block voice input for every command typed in compose mode.
+            outAttrs.inputType = EditorInfo.TYPE_CLASS_TEXT or EditorInfo.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+            // Do not let the IME learn what is typed here.
             outAttrs.imeOptions = outAttrs.imeOptions or EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
             if (shortcutInputMode == ImeShortcutInputMode.FORCE_ASCII) {
                 outAttrs.imeOptions = outAttrs.imeOptions or EditorInfo.IME_FLAG_FORCE_ASCII

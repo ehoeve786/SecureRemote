@@ -51,9 +51,11 @@ import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -100,7 +102,6 @@ import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.input.pointer.util.addPointerInputChange
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -112,7 +113,6 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -437,7 +437,7 @@ internal fun TerminalWithAccessibility(
 
     val density = LocalDensity.current
     val haptic = LocalHapticFeedback.current
-    val clipboardManager = LocalClipboardManager.current
+    val clipContext = LocalContext.current
     val scope = rememberCoroutineScope()
 
     // Track accessibility state - only enable accessibility features when needed
@@ -451,8 +451,30 @@ internal fun TerminalWithAccessibility(
     val keyboardHandler = remember(terminalEmulator) {
         KeyboardHandler(QueuedTerminal(terminalEmulator), modifierManager)
     }
+    // Multi-line text typed or pasted into a remote without bracketed paste waits here for the owner's answer.
+    var pendingMultilinePaste by remember(terminalEmulator) { mutableStateOf<String?>(null) }
     SideEffect {
         keyboardHandler.onInterceptKey = currentOnInterceptKey
+        keyboardHandler.bracketedPasteEnabled = { terminalEmulator.bracketedPasteEnabled }
+        keyboardHandler.onMultilinePaste = { text -> pendingMultilinePaste = text }
+    }
+    pendingMultilinePaste?.let { text ->
+        AlertDialog(
+            onDismissRequest = { pendingMultilinePaste = null },
+            title = { Text(stringResource(R.string.terminal_multiline_paste_title)) },
+            text = { Text(stringResource(R.string.terminal_multiline_paste_message)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingMultilinePaste = null
+                    keyboardHandler.sendConfirmedText(text)
+                }) { Text(stringResource(R.string.terminal_multiline_paste_confirm)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingMultilinePaste = null }) {
+                    Text(stringResource(R.string.terminal_multiline_paste_cancel))
+                }
+            },
+        )
     }
 
     // Font size and zoom state
@@ -639,10 +661,9 @@ internal fun TerminalWithAccessibility(
             val slices = (0 until screenState.snapshot.rows).flatMap { screenState.getVisibleLine(it).images }
             store.updateViewport(ImageViewport(-screenState.scrollbackPosition, slices, baseCharWidth, baseCharHeight, android.os.SystemClock.uptimeMillis()))
             if (slices.isEmpty() || !needsFrames) return@collectLatest
-            while (true) {
-                // Also yield with synthetic/immediate clocks; a static image goes idle
-                // as soon as maintenance publishes that its decode has completed.
-                delay(1)
+            // One viewport update per display frame, for as long as the store still needs frames. A static
+            // image goes idle as soon as maintenance publishes that its decode has completed.
+            while (store.frameUpdatesNeeded) {
                 androidx.compose.runtime.withFrameNanos { frameTime ->
                     store.updateViewport(ImageViewport(-screenState.scrollbackPosition, slices, baseCharWidth, baseCharHeight, frameTime / 1_000_000L))
                 }
@@ -680,7 +701,7 @@ internal fun TerminalWithAccessibility(
     }
 
     // Selection controller - expose API for external control
-    val selectionController = remember(terminalEmulator, selectionManager, clipboardManager, screenState, textPaint, baseCharWidth) {
+    val selectionController = remember(terminalEmulator, selectionManager, clipContext, screenState, textPaint, baseCharWidth) {
         object : SelectionController {
             override val isSelectionActive: Boolean
                 get() = selectionManager.mode != SelectionMode.NONE
@@ -749,7 +770,7 @@ internal fun TerminalWithAccessibility(
             override fun copySelection(): String {
                 val text = selectionManager.getSelectedText(screenState.snapshot, screenState.scrollbackPosition)
                 if (text.isNotEmpty()) {
-                    clipboardManager.setText(AnnotatedString(text))
+                    copySensitive(clipContext, "terminal selection", text)
                     selectionManager.clearSelection()
                 }
                 return text
@@ -1389,6 +1410,7 @@ internal fun TerminalWithAccessibility(
                                         longPressJob?.cancel()
                                         gestureType = if (pagingCandidate && singleTouch &&
                                             currentOnPageGesture != null &&
+                                            !screenState.snapshot.alternateScreen &&
                                             abs(panAccumulator.y) > abs(panAccumulator.x)
                                         ) {
                                             GestureType.Page
@@ -1751,9 +1773,10 @@ internal fun TerminalWithAccessibility(
                 )
 
                 if (!isReviewMode && keyboardEnabled) {
+                    // Off: the last lines of output would be spoken by TalkBack, and output can hold secrets.
                     LiveOutputRegion(
                         screenState = screenState,
-                        enabled = true,
+                        enabled = false,
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
@@ -1822,7 +1845,7 @@ internal fun TerminalWithAccessibility(
                             onClick = {
                                 val selectedText =
                                     selectionManager.getSelectedText(screenState.snapshot, screenState.scrollbackPosition)
-                                clipboardManager.setText(AnnotatedString(selectedText))
+                                copySensitive(clipContext, "terminal selection", selectedText)
                                 selectionManager.clearSelection()
                             },
                             modifier = Modifier.size(COPY_BUTTON_SIZE),
@@ -1973,13 +1996,7 @@ private fun TerminalRows(
     // Cross-row URL detection depends on visible contents, not cursor/sequence updates.
     val hyperlinkMasks = remember(screenState, autoDetectUrls) {
         derivedStateOf {
-            if (!autoDetectUrls) {
-                emptyList()
-            } else {
-                List(screenState.snapshot.rows) { row ->
-                    BooleanArray(screenState.snapshot.cols) { col -> screenState.getHyperlinkUrlAt(row, col, autoDetectUrls = true) != null }
-                }
-            }
+            if (!autoDetectUrls) emptyList() else screenState.hyperlinkMask()
         }
     }
 
@@ -2746,9 +2763,9 @@ private fun DrawScope.drawComposeOverlay(
     // width, however, comes from the paint that actually draws the text — fonts don't
     // always render "あ" at exactly 2 × measureText("M"), and using column math for pixels
     // makes the trailing cursor drift further past the glyphs as the buffer grows.
-    val displayText = truncateForOverlay(buffer, availableCols)
+    val displayText = truncateForOverlayCached(buffer, availableCols)
     if (displayText.isEmpty()) return
-    val displayWidth = textPaint.measureText(displayText)
+    val displayWidth = measureOverlayCached(textPaint, displayText)
 
     // Draw background
     drawRect(
@@ -2821,6 +2838,22 @@ private fun String.visualColumnWidth(): Int {
         i += Character.charCount(cp)
     }
     return total
+}
+
+/** The last overlay width, so a frame with the same text and text size is not measured again. */
+private var overlayWidth: Triple<String, Float, Float>? = null
+
+private fun measureOverlayCached(paint: Paint, text: String): Float {
+    overlayWidth?.let { (t, size, width) -> if (t == text && size == paint.textSize) return width }
+    return paint.measureText(text).also { overlayWidth = Triple(text, paint.textSize, it) }
+}
+
+/** The last overlay trim, so a frame with the same buffer and width does not walk the text again. */
+private var overlayTrim: Triple<String, Int, String>? = null
+
+private fun truncateForOverlayCached(buffer: String, availableCols: Int): String {
+    overlayTrim?.let { (text, cols, trimmed) -> if (cols == availableCols && text == buffer) return trimmed }
+    return truncateForOverlay(buffer, availableCols).also { overlayTrim = Triple(buffer, availableCols, it) }
 }
 
 /**

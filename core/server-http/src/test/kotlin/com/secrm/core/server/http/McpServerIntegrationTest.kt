@@ -79,7 +79,7 @@ class McpServerIntegrationTest {
                 },
             )
         }
-        val auth = McpAuth(localPort, remotePort, "local-token", setOf("*.ts.net")) {
+        val auth = McpAuth(localPort, remotePort, "local-token", { setOf("*.ts.net") }) {
             it == "static-remote" || oauth.isValid(it)
         }
         server = McpHttpServer(dispatcher, auth, oauth, localPort, remotePort)
@@ -164,7 +164,7 @@ class McpServerIntegrationTest {
     }
 
     @Test fun fullOAuthFlowThenToolCallAndRefresh() {
-        val verifier = "a-verifier-long-enough-for-pkce-0123456789"
+        val verifier = "a-verifier-long-enough-for-pkce-0123456789abc"
         val challenge = Base64.getUrlEncoder().withoutPadding()
             .encodeToString(MessageDigest.getInstance("SHA-256").digest(verifier.toByteArray()))
 
@@ -215,11 +215,11 @@ class McpServerIntegrationTest {
         assertEquals(200, refreshed.status)
         val access2 = refreshed.json["access_token"]!!.jsonPrimitive.content
         assertEquals(200, mcp(remotePort, remoteHost, access2, """{"jsonrpc":"2.0","id":1,"method":"ping"}""").status)
-        val reuse = send(remotePort, "POST", "/token", remoteHost,
+        // A retry right after the refresh is inside the grace window, so it gets the next pair. Reuse after the window is covered in McpOAuthTest.
+        val retry = send(remotePort, "POST", "/token", remoteHost,
             headers = mapOf("Content-Type" to "application/x-www-form-urlencoded"),
             body = form("grant_type" to "refresh_token", "refresh_token" to refresh))
-        assertEquals(400, reuse.status)
-        assertTrue(reuse.body.contains("invalid_grant"))
+        assertEquals(200, retry.status)
     }
 
     @Test fun wrongPairingCodeShowsErrorAndIssuesNoCode() {

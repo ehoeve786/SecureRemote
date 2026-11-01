@@ -51,15 +51,21 @@ internal class TerminalShaping(sourcePaint: TerminalTextPaint, private val byteL
         viewportRows = state.snapshot.rows
         if (sequence == state.snapshot.sequenceNumber && scrollback == state.scrollbackPosition) return@withoutReadObservation
         val newContext = state.snapshot.scrollback + state.snapshot.lines
-        if (contextLines.size != newContext.size || contextLines.indices.any {
-                contextLines[it].cells !== newContext[it].cells || contextLines[it].softWrapped != newContext[it].softWrapped
-            }
-        ) {
+        val old = contextLines
+        if (old.size != newContext.size) {
+            // The line indexes moved, so no cached layout can be matched to a line any more.
             cache.clear()
             keys.clear()
             retainedBytes = 0
-            contextLines = newContext
+        } else {
+            // Only the paragraphs that hold a changed line are shaped again. Every other paragraph keeps its layouts.
+            for (index in old.indices) {
+                if (old[index].cells === newContext[index].cells && old[index].softWrapped == newContext[index].softWrapped) continue
+                forgetParagraph(old, index)
+                forgetParagraph(newContext, index)
+            }
         }
+        contextLines = newContext
         sequence = state.snapshot.sequenceNumber
         scrollback = state.scrollbackPosition
         var index = keys.lastIndex
@@ -76,6 +82,21 @@ internal class TerminalShaping(sourcePaint: TerminalTextPaint, private val byteL
             if (!visible) remove(index)
             index--
         }
+    }
+
+    /** Drops the cached layouts of every line in the paragraph that holds [index]. */
+    private fun forgetParagraph(lines: List<TerminalLine>, index: Int) {
+        var first = index
+        while (first > 0 && lines[first - 1].softWrapped) first--
+        var last = index
+        while (last + 1 < lines.size && lines[last].softWrapped) last++
+        for (i in first..last) forget(lines[i].cells)
+    }
+
+    private fun forget(cells: PackedCells) {
+        if (cache[cells] == null) return
+        val index = keys.indexOfFirst { it === cells }
+        if (index >= 0) remove(index)
     }
 
     private fun remove(index: Int) {
@@ -395,7 +416,7 @@ internal class TerminalShaping(sourcePaint: TerminalTextPaint, private val byteL
     }
 
     companion object {
-        private const val MAX_PARAGRAPH_ROWS = 500
+        private const val MAX_PARAGRAPH_ROWS = 128
 
         // Signed script identifiers: negative scripts use contained RTL ordering.
         // ASCII, CJK and emoji never enter platform script classification or shaping.

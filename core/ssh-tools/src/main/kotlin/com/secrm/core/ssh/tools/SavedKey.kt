@@ -13,5 +13,4 @@ data class SavedKey(
     // included, sits in the encrypted key list, which KeyRepository.list() decodes on every call.
 )
 
-/** AGENT = SSH key item from the Bitwarden vault (keyId holds the item id). */
-enum class AuthMethod { PASSWORD, SAVED_KEY, AGENT }
+enum class AuthMethod { PASSWORD, SAVED_KEY }

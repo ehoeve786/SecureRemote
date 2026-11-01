@@ -60,8 +60,9 @@ internal class TerminalInversion {
     fun cursor(rect: RectF) {
         cursor.rewind()
         cursor.addRect(rect, Path.Direction.CW)
-        // Inverting a selected pixel twice restores its original color.
-        check(mask.op(cursor, Path.Op.XOR))
+        // Inverting a selected pixel twice restores its original color. A failed path op leaves the mask as it
+        // was, so one cell loses its inversion rather than the whole selection being cleared.
+        mask.op(cursor, Path.Op.XOR)
     }
 
     @Suppress("DEPRECATION") // Region.Op.DIFFERENCE also supports API 24–25.

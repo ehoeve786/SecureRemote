@@ -1,6 +1,7 @@
 package com.secrm.ui.server
 
 import android.content.ClipData
+import com.secrm.ui.sensitiveClip
 import android.content.ClipboardManager
 import android.content.Context
 import androidx.compose.foundation.background
@@ -9,8 +10,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
-import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material3.*
+import kotlinx.coroutines.delay
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -22,22 +23,16 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.PasswordVisualTransformation
-import android.os.PersistableBundle
 import com.secrm.SecureRemoteApp
 import com.secrm.core.tunnel.Tunnel
 import com.secrm.design.*
 import com.secrm.service.McpServerService
-import com.secrm.ui.agent.BitwardenScreen
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ServerControlScreen(app: SecureRemoteApp, onBack: (() -> Unit)? = null) {
-    var showAgent by remember { mutableStateOf(false) }
+fun ServerControlScreen(app: SecureRemoteApp, onBack: (() -> Unit)? = null, onOpenAudit: () -> Unit = {}, onOpenJobs: () -> Unit = {}) {
     val scope = rememberCoroutineScope()
-
-    androidx.activity.compose.BackHandler(showAgent) { showAgent = false }
-    if (showAgent) { BitwardenScreen(app, onBack = { showAgent = false }); return }
 
     Scaffold(
         topBar = {
@@ -68,11 +63,9 @@ fun ServerControlScreen(app: SecureRemoteApp, onBack: (() -> Unit)? = null) {
             item { TailscaleSection(app) }
             item { WireGuardSection(app) }
 
-            item { SectionHeader("SSH agent") }
-            item { AgentEntryCard(onOpen = { showAgent = true }) }
-
             item { SectionHeader("MCP server") }
-            item { McpSection(app) }
+            item { McpSection(app, onOpenAudit) }
+            item { PillButton("Scheduled jobs and health checks", PillStyle.Ghost, Modifier.fillMaxWidth(), onClick = onOpenJobs) }
 
             item { SectionHeader("About") }
             item { AboutSection() }
@@ -93,6 +86,14 @@ private fun AppearanceSection(ui: com.secrm.data.UiPrefs) {
                         shape = SegmentedButtonDefaults.itemShape(i, modes.size),
                     ) { Text(m.name) }
                 }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Allow screenshots", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+                    Text("Off keeps tokens, keys and terminal output out of screenshots, recordings and the recent-apps preview.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Switch(ui.allowScreenshots, ui::chooseAllowScreenshots)
             }
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
@@ -263,7 +264,7 @@ private fun OnOff(st: Tunnel.State, on: () -> Unit, off: () -> Unit) =
 // ── MCP Server ────────────────────────────────────────────
 
 @Composable
-private fun McpSection(app: SecureRemoteApp) {
+private fun McpSection(app: SecureRemoteApp, onOpenAudit: () -> Unit) {
     val ctx = LocalContext.current
     val running by McpServerService.running.collectAsState()
     var expanded by remember { mutableStateOf(false) }
@@ -293,6 +294,34 @@ private fun McpSection(app: SecureRemoteApp) {
                     McpServerService.start(ctx)
                 }
             }
+
+            Spacer(Modifier.height(Space.md))
+            Text("Stop after no tool calls for", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(Space.xs))
+            val idleChoices = listOf(0 to "Never", 15 to "15 min", 30 to "30 min", 60 to "1 h")
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                idleChoices.forEachIndexed { i, (minutes, label) ->
+                    SegmentedButton(
+                        selected = app.mcp.idleMinutes == minutes,
+                        onClick = { app.mcp.chooseIdleMinutes(minutes) },
+                        shape = SegmentedButtonDefaults.itemShape(i, idleChoices.size),
+                    ) { Text(label) }
+                }
+            }
+            Spacer(Modifier.height(Space.sm))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Stop when the screen turns off", style = MaterialTheme.typography.bodyLarge)
+                    Text("Agents lose access until you start the server again.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Switch(app.mcp.lockOnScreenOff, app.mcp::chooseLockOnScreenOff)
+            }
+
+            Spacer(Modifier.height(Space.sm))
+            PillButton("View audit log", PillStyle.Ghost, Modifier.fillMaxWidth(), onClick = onOpenAudit)
+
+            AgentTokensSection(app)
 
             // claude.ai connector (OAuth via pairing code)
             val ts by app.tailscale.state.collectAsState()
@@ -406,39 +435,22 @@ private fun AboutSection() {
             Text("Secure Remote Manager",
                 style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.onSurface)
-            Text("Version 1.0.0 · debug build",
+            Text("Version 1.0.0",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(Space.sm))
             Text(
                 "Local-first. No telemetry. Credentials stored in Android Keystore.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
             )
+            Spacer(Modifier.height(Space.sm))
+            // Accessibility services that are switched on can read the whole terminal screen, secrets included.
+            Text(
+                "Enabled accessibility services can read everything the terminal shows, passwords included. " +
+                    "Turn them off, or keep secrets out of the terminal, if that matters.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+            )
         }
     }
-}
-
-@Composable
-private fun AgentEntryCard(onOpen: () -> Unit) {
-    Card(
-        onClick = onOpen,
-        modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.large,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-    ) {
-        ListItem(
-            headlineContent = { Text("Bitwarden", style = MaterialTheme.typography.titleMedium) },
-            supportingContent = { Text("Use SSH keys from your vault. Unlocks with your fingerprint; keys stay in memory only.") },
-            leadingContent = {
-                Box(Modifier.size(44.dp).background(MaterialTheme.colorScheme.secondaryContainer, androidx.compose.foundation.shape.CircleShape), contentAlignment = Alignment.Center) {
-                    Icon(SecrmIcons.Key, null, tint = MaterialTheme.colorScheme.onSecondaryContainer)
-                }
-            },
-            trailingContent = { Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null) },
-            colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
-        )
-    }
-
 }
 
 /** A confirmation before an action that cannot be undone from the app. */
@@ -465,8 +477,54 @@ private fun SecretOrPlaceholder(value: String) {
     }
 }
 
-/** A clip the system keeps out of clipboard previews (Android 13+ reads the flag; older versions ignore it). */
-private fun sensitiveClip(label: String, text: String): ClipData =
-    ClipData.newPlainText(label, text).apply {
-        description.extras = PersistableBundle().apply { putBoolean("android.content.extra.IS_SENSITIVE", true) }
+@Composable
+private fun AgentTokensSection(app: SecureRemoteApp) {
+    var label by remember { mutableStateOf("") }
+    var issued by remember { mutableStateOf<String?>(null) }
+    var agents by remember { mutableStateOf(app.agents.list()) }
+
+    Spacer(Modifier.height(Space.md))
+    Text("Agent tokens", style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Medium)
+    Text("One token per agent. Revoking one leaves the others working.",
+        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Spacer(Modifier.height(Space.xs))
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+        OutlinedTextField(
+            value = label, onValueChange = { label = it }, singleLine = true,
+            label = { Text("Agent name") }, modifier = Modifier.weight(1f),
+        )
+        PillButton("Create", PillStyle.Primary, enabled = label.isNotBlank() && !app.config.keystoreLost, onClick = {
+            issued = app.agents.create(label)
+            label = ""
+            agents = app.agents.list()
+        })
     }
+    // The token stays on screen for a minute, then it is cleared from memory too.
+    LaunchedEffect(issued) {
+        if (issued != null) {
+            delay(60_000)
+            issued = null
+        }
+    }
+    issued?.let {
+        Spacer(Modifier.height(Space.xs))
+        Text("Token for the new agent (shown once)", style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        SecretOrPlaceholder(it)
+    }
+    agents.forEach { a ->
+        Spacer(Modifier.height(Space.xs))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(a.label, style = MaterialTheme.typography.bodyLarge)
+                Text(if (a.revoked) "Revoked" else "Created ${a.created}",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (!a.revoked) TextButton(onClick = {
+                app.agents.revoke(a.id)
+                agents = app.agents.list()
+            }) { Text("Revoke", color = MaterialTheme.colorScheme.error) }
+        }
+    }
+}

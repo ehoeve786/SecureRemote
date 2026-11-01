@@ -2346,3 +2346,8 @@ void vterm_state_send_selection(VTermState *state, VTermSelectionMask mask, VTer
       vterm_push_output_sprintf_str(vt, 0, true, "");
   }
 }
+
+int vterm_state_get_bracketpaste(const VTermState *state)
+{
+  return state->mode.bracketpaste;
+}

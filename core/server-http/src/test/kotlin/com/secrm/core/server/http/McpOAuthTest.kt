@@ -85,13 +85,24 @@ class McpOAuthTest {
     }
 
     @Test fun refreshTokenRotatesAndOldOneStopsWorking() {
-        val oauth = newOAuth()
+        val clock = Clock()
+        val oauth = newOAuth(clock = clock)
         val (_, refresh1) = requireNotNull(exchange(oauth, requireNotNull(pair(oauth, oauth.newPairingCode()))))
         val (access2, refresh2) = requireNotNull(oauth.token(mapOf("grant_type" to "refresh_token", "refresh_token" to refresh1)))
         assertTrue(oauth.isValid(access2))
+        clock.t += 31_000
         assertNull("a refresh token is single-use", oauth.token(mapOf("grant_type" to "refresh_token", "refresh_token" to refresh1)))
-        assertFalse("replaying a rotated token revokes its whole family", oauth.isValid(access2))
+        assertFalse("replaying a rotated token after the grace window revokes its whole family", oauth.isValid(access2))
         assertNull("the live refresh token dies with its family", oauth.token(mapOf("grant_type" to "refresh_token", "refresh_token" to refresh2)))
+    }
+
+    @Test fun retryWithinGraceWindowGetsTheNextPair() {
+        val oauth = newOAuth(clock = Clock())
+        val (_, refresh1) = requireNotNull(exchange(oauth, requireNotNull(pair(oauth, oauth.newPairingCode()))))
+        requireNotNull(oauth.token(mapOf("grant_type" to "refresh_token", "refresh_token" to refresh1)))
+        // The first response was lost, so the client sends the same refresh token again.
+        val (access3, _) = requireNotNull(oauth.token(mapOf("grant_type" to "refresh_token", "refresh_token" to refresh1)))
+        assertTrue("a benign retry keeps the session", oauth.isValid(access3))
     }
 
     @Test fun omittedRedirectUriIsRejectedWhenAuthorizeSentOne() {
@@ -101,11 +112,13 @@ class McpOAuthTest {
     }
 
     @Test fun replayedRefreshTokenRevokesFamilyEvenAfterRotationChain() {
-        val oauth = newOAuth()
+        val clock = Clock()
+        val oauth = newOAuth(clock = clock)
         val (_, r1) = requireNotNull(exchange(oauth, requireNotNull(pair(oauth, oauth.newPairingCode()))))
         val (_, r2) = requireNotNull(oauth.token(mapOf("grant_type" to "refresh_token", "refresh_token" to r1)))
         val (a3, _) = requireNotNull(oauth.token(mapOf("grant_type" to "refresh_token", "refresh_token" to r2)))
-        oauth.token(mapOf("grant_type" to "refresh_token", "refresh_token" to r1)) // stolen copy replayed
+        clock.t += 31_000
+        oauth.token(mapOf("grant_type" to "refresh_token", "refresh_token" to r1)) // stolen copy replayed after the grace window
         assertFalse(oauth.isValid(a3))
     }
 

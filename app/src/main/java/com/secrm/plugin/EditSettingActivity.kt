@@ -26,7 +26,7 @@ class EditSettingActivity : ComponentActivity() {
         // Only a macro host that opened this for a result may configure an action. Anything else could
         // collect a signed setting, and so a command the user never meant to approve.
         val caller = callingPackage
-        if (caller == null || caller !in PluginProtocol.HOST_PACKAGES) {
+        if (!PluginProtocol.isGenuineHost(this, caller)) {
             setResult(Activity.RESULT_CANCELED); finish(); return
         }
         val initial = RunSetting.fromBundle(intent.getBundleExtra(PluginProtocol.EXTRA_BUNDLE))

@@ -16,17 +16,34 @@ data class SavedConnection(
     val keyId: String? = null,
     /** Private network to route through ("tailscale" or "wireguard"), or null for direct. */
     val via: String? = null,
+    /**
+     * Tried when a direct connection (via == null) cannot reach the host: the private network to route through.
+     * Lets one saved host work both on the home LAN and away from it.
+     */
+    val fallbackVia: String? = null,
+    /** The route that last worked on each private network, keyed by its /24 (see [currentNetworkKey]); "direct" or a route name. */
+    val routeByNetwork: Map<String, String> = emptyMap(),
     /** Host key (base64) trusted on first connect; also how the device is found if its IP changes. */
     val hostKey: String? = null,
     /** Opt-in: a connection is not reachable over MCP until its owner enables it. */
     val allowMcpExec: Boolean = false,
-    val allowMcpRead: Boolean = true
+    val allowMcpRead: Boolean = false
 )
 
 interface SavedConnections {
     fun list(): List<SavedConnection>
     fun save(connection: SavedConnection)
     fun find(name: String): SavedConnection?
+
+    /**
+     * Applies [change] to the record named [name] as one read-modify-write. Implementations that can be called
+     * from several threads should make this atomic; the default is not.
+     */
+    fun update(name: String, change: (SavedConnection) -> SavedConnection) {
+        val current = find(name) ?: return
+        val next = change(current)
+        if (next != current) save(next)
+    }
 
     /**
      * Return the private key PEM for a saved key id, or null. Implemented by
@@ -36,30 +53,71 @@ interface SavedConnections {
 
     /** Passphrase for a saved key id, or empty. */
     fun keyPassphraseFor(keyId: String): String?
-
-    /** Private key of a Bitwarden SSH-key item, or null while the vault is locked. */
-    fun bitwardenKeyFor(itemId: String): String?
 }
 
 /**
- * Connects to a saved connection, remembering its host key on first use. If a direct connect to a
- * private address fails, follows the device to its new address by host key (Tidegate's
- * HostRediscovery) and saves it.
+ * Connects to a saved connection, pinned to its host key. A host with no key yet is pinned only to
+ * [approvedKey], the key the owner checked in the app; any other key is refused. With [allowRediscover],
+ * a failed direct connect follows the device to its new address by host key and saves it.
  */
 suspend fun SshClientManager.connectSaved(
     conn: SavedConnection,
     auth: SshAuth,
     saved: SavedConnections,
-    /** Off for MCP callers: a moved device is only followed when the owner has connected in the app. */
+    /** On for the owner's app and plugin; MCP passes false, so an agent never triggers a network probe. */
     allowRediscover: Boolean = true,
+    approvedKey: String? = null,
 ): Boolean {
-    fun cfg(host: String) = SshConfig(host = host, port = conn.port, username = conn.user, auth = auth, via = conn.via, hostKey = conn.hostKey, name = conn.name)
-    if (connect(cfg(conn.host))) {
-        if (conn.hostKey == null) saved.save(conn.copy(hostKey = hostKey))
+    val fallback = conn.fallbackVia?.takeIf { conn.via == null }
+    val netKey = currentNetworkKey()
+    val routes = orderRoutes(conn.via, fallback, onLocalNetwork(conn.host), netKey?.let { conn.routeByNetwork[it] })
+    for (route in routes) {
+        // Only the direct attempt may search for a moved host; a tunnel attempt never probes the network.
+        if (connectOn(conn, route, auth, saved, allowRediscover && route == null, approvedKey)) {
+            rememberRoute(conn, netKey, route, saved)
+            return true
+        }
+    }
+    return false
+}
+
+/**
+ * Applies [change] to the latest saved record, not the copy taken before the connect, so an owner edit made
+ * meanwhile (such as revoking an MCP flag) is kept.
+ */
+private fun saveLearned(saved: SavedConnections, name: String, change: (SavedConnection) -> SavedConnection) {
+    saved.update(name, change)
+}
+
+/** Records the route that worked on this network, read from the latest saved record so no other change is lost. */
+internal fun rememberRoute(conn: SavedConnection, netKey: String?, route: String?, saved: SavedConnections) {
+    if (netKey == null || conn.via != null) return
+    val key = route ?: DIRECT
+    saved.update(conn.name) { latest ->
+        if (latest.routeByNetwork[netKey] == key) latest else latest.copy(routeByNetwork = latest.routeByNetwork + (netKey to key))
+    }
+}
+
+private suspend fun SshClientManager.connectOn(
+    conn: SavedConnection,
+    via: String?,
+    auth: SshAuth,
+    saved: SavedConnections,
+    allowRediscover: Boolean,
+    approvedKey: String?,
+): Boolean {
+    fun cfg(host: String, key: String) = SshConfig(host = host, port = conn.port, username = conn.user, auth = auth, via = via, hostKey = key, name = conn.name)
+    val pinned = conn.hostKey ?: run {
+        val seen = scanHostKey(conn.host, conn.port, via) ?: return false
+        if (seen != approvedKey) return false
+        seen
+    }
+    if (connect(cfg(conn.host, pinned))) {
+        if (conn.hostKey == null) saveLearned(saved, conn.name) { it.copy(hostKey = it.hostKey ?: pinned) }
         return true
     }
-    val moved = (if (allowRediscover) conn.hostKey?.takeIf { conn.via == null }?.let { rediscover(conn.host, conn.port, it) } else null)
+    val moved = (if (allowRediscover && via == null) rediscover(conn.host, conn.port, pinned) else null)
         ?: return false
-    saved.save(conn.copy(host = moved))
-    return connect(cfg(moved))
+    saveLearned(saved, conn.name) { it.copy(host = moved) }
+    return connect(cfg(moved, pinned))
 }

@@ -48,6 +48,10 @@ class HostSessions(private val app: SecureRemoteApp) {
     private val _clip = MutableStateFlow<Clip?>(null)
     val clip: StateFlow<Clip?> = _clip.asStateFlow()
 
+    /** A host whose key changed since it was trusted; the owner decides in [trustNewKey] or by dismissing. */
+    data class KeyChange(val conn: SavedConnection, val pinned: String, val presented: String)
+    val keyChange = MutableStateFlow<KeyChange?>(null)
+
     /** Hosts whose session is up, in the order they were opened. A host that drops leaves this list. */
     val connected: StateFlow<List<HostSession>> = all.flatMapLatest { list ->
         if (list.isEmpty()) flowOf(emptyList())
@@ -68,17 +72,42 @@ class HostSessions(private val app: SecureRemoteApp) {
     fun setClip(c: Clip?) { _clip.value = c }
 
     /** Connects [conn] alongside the others (or re-connects it). Returns null on success, else why it failed. */
-    suspend fun connect(conn: SavedConnection, auth: SshAuth): String? {
+    suspend fun connect(conn: SavedConnection, auth: SshAuth, rediscover: Boolean = true, approvedKey: String? = null): String? {
         find(conn.name)?.takeIf { it.ssh.state.value is SshState.Connected }?.let { select(conn.name); return null }
         val ssh = app.newClient()
-        if (!ssh.connectSaved(conn, auth, app.connections)) {
-            val why = (ssh.state.value as? SshState.Error)?.message ?: "SSH connect failed"
+        if (!ssh.connectSaved(conn, auth, app.connections, allowRediscover = rediscover, approvedKey = approvedKey)) {
+            val changed = ssh.state.value as? SshState.HostKeyChanged
+            if (changed != null) keyChange.value = KeyChange(conn, changed.pinned, changed.presented)
+            val why = when (changed) {
+                null -> (ssh.state.value as? SshState.Error)?.message ?: "SSH connect failed"
+                else -> "Host key for ${conn.name} has changed"
+            }
             ssh.shutdown()
             return why
         }
         find(conn.name)?.ssh?.shutdown() // a dropped session under the same name
         all.update { list -> list.filter { it.name != conn.name } + HostSession(conn.name, ssh, app) }
         select(conn.name)
+        return null
+    }
+
+    /** Records the presented key as the one to trust for [change]'s host. The next connect will pin to it. */
+    fun trustNewKey(change: KeyChange) {
+        app.connections.save(change.conn.copy(hostKey = change.presented))
+        keyChange.value = null
+    }
+
+    fun dismissKeyChange() { keyChange.value = null }
+
+    /** The key a host without one presents, for the owner to approve before connecting. Sends no credentials. */
+    suspend fun scanKey(conn: SavedConnection): String? {
+        // The same routes as a connect: the pinned route if there is one, else direct, then the fallback.
+        val routes = if (conn.via != null) listOf(conn.via) else listOfNotNull(null, conn.fallbackVia)
+        for (route in routes) {
+            val probe = app.newClient()
+            val key = try { probe.scanHostKey(conn.host, conn.port, route) } finally { probe.shutdown() }
+            if (key != null) return key
+        }
         return null
     }
 

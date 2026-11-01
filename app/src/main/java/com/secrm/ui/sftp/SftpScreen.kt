@@ -221,6 +221,12 @@ private fun FilesContent(controller: SftpController, target: String, clip: Clip?
                 }
                 ui.transfer?.let { t ->
                     TransferCard(t, onCancel = controller::cancelTransfer, modifier = Modifier.align(Alignment.BottomCenter))
+                    if (ui.queued > 0) Text(
+                        "${ui.queued} more queued",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 96.dp),
+                    )
                 }
             }
         }
@@ -407,6 +413,7 @@ private fun NameDialog(title: String, initial: String, confirm: String, siblings
     val problem = when {
         name.isEmpty() -> null
         '/' in name -> "A name can't contain /"
+        name == "." || name == ".." -> "That name isn't allowed"
         siblings.any { it.name == name } -> "Something with this name already exists"
         else -> null
     }

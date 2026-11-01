@@ -44,6 +44,21 @@ private suspend fun ApplicationCall.boundedText(limit: Int = MAX_OAUTH_BODY): St
 }
 
 /** A fixed window of [max] calls per [windowMs], shared by all callers of one route. */
+/** One [RateLimit] bucket per client id. The least recently used buckets are dropped past 256, so memory stays bounded. */
+internal class ClientRateLimits(private val max: Int) {
+    private val buckets = object : LinkedHashMap<String, RateLimit>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, RateLimit>?) = size > 256
+    }
+    // A new client_id gets a new bucket, so the per-client limit alone can be bypassed. This ceiling covers all of them.
+    private val overall = RateLimit(max = max * 4)
+
+    @Synchronized
+    fun allow(clientId: String): Boolean {
+        if (!overall.allow()) return false
+        return buckets.getOrPut(clientId) { RateLimit(max = max) }.allow()
+    }
+}
+
 internal class RateLimit(
     private val max: Int,
     private val windowMs: Long = 60_000,
@@ -64,7 +79,8 @@ internal class RateLimit(
 internal fun Route.oauthRoutes(oauth: McpOAuth, mcpPath: String) {
     // Shared across callers, so a flood can briefly delay a refresh but cannot exhaust memory or CPU.
     val registerLimit = RateLimit(max = 20)
-    val tokenLimit = RateLimit(max = 60)
+    // Per client_id, so one client's burst cannot slow the others' refreshes.
+    val tokenLimit = ClientRateLimits(max = 60)
     val pairingLimit = RateLimit(max = 10) // the only bound on guessing a pairing code (see McpOAuth.newPairingCode)
     get("/.well-known/oauth-protected-resource/{rest...}") {
         call.json {
@@ -125,8 +141,10 @@ internal fun Route.oauthRoutes(oauth: McpOAuth, mcpPath: String) {
         call.respondRedirect("$redirect?code=${enc(code)}&state=${enc(p["state"].orEmpty())}")
     }
     post("/token") {
+        // RFC 6749 5.1: token responses, errors included, must not be cached.
+        call.response.header(HttpHeaders.CacheControl, "no-store")
         val p = call.boundedText()?.let { parseQueryString(it) } ?: return@post call.respond(HttpStatusCode.PayloadTooLarge)
-        if (!tokenLimit.allow()) return@post call.respond(HttpStatusCode.TooManyRequests)
+        if (!tokenLimit.allow(p["client_id"].orEmpty())) return@post call.respond(HttpStatusCode.TooManyRequests)
         val (access, refresh) = oauth.token(p.names().associateWith { p[it] })
             ?: return@post call.json(HttpStatusCode.BadRequest) { put("error", "invalid_grant") }
         call.json {

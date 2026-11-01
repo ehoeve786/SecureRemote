@@ -37,12 +37,14 @@ fun TerminalScreen(app: SecureRemoteApp, onOpenHosts: () -> Unit, onOpenFiles: (
         )
         return
     }
-    HostPager(app, hosts) { host -> TerminalPage(host, onOpenFiles) }
+    HostPager(app, hosts) { host -> TerminalPage(app, host, onOpenFiles) }
 }
 
 @Composable
-private fun TerminalPage(host: HostSession, onOpenFiles: () -> Unit) {
+private fun TerminalPage(app: SecureRemoteApp, host: HostSession, onOpenFiles: () -> Unit) {
     val bridge = host.terminal() ?: return
+    var showSnippets by remember { mutableStateOf(false) }
+    var showPorts by remember { mutableStateOf(false) }
     var ready by remember(bridge) { mutableStateOf<Boolean?>(null) }
     var selecting by remember { mutableStateOf<String?>(null) }
     selecting?.let { TranscriptSelector(it) { selecting = null } }
@@ -56,15 +58,19 @@ private fun TerminalPage(host: HostSession, onOpenFiles: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             ModeSwitch(onFiles = onOpenFiles)
-            Text(host.target, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            Text(host.name, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f).padding(horizontal = Space.md))
+                modifier = Modifier.weight(1f).padding(horizontal = Space.sm))
+            TextButton({ showSnippets = true }) { Text("Snippets") }
+            TextButton({ showPorts = true }) { Text("Ports") }
             TextButton({ selecting = bridge.transcript() }) { Text("Select") }
             TextButton({
                 (ctx.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager)
-                    .setPrimaryClip(android.content.ClipData.newPlainText("command output", bridge.lastOutput()))
-            }) { Text("Copy output") }
+                    .setPrimaryClip(com.secrm.ui.sensitiveClip("command output", bridge.lastOutput()))
+            }) { Text("Copy") }
         } }
+        if (showPorts) app.sessions.current.value?.ssh?.let { PortForwardSheet(it, onDismiss = { showPorts = false }) }
+        if (showSnippets) SnippetSheet(app, onInsert = { bridge.send(it); showSnippets = false }, onDismiss = { showSnippets = false })
         // The terminal itself is always dark, whatever the app theme.
         Box(Modifier.weight(1f).background(androidx.compose.ui.graphics.Color.Black)) {
             TerminalSurface(bridge = bridge, onReady = { ready = it }, modifier = Modifier.fillMaxSize())
@@ -158,7 +164,7 @@ private fun TranscriptSelector(text: String, onClose: () -> Unit) {
                 Box(Modifier.tappable {
                     if (anchor < 0) return@tappable
                     (ctx.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager)
-                        .setPrimaryClip(android.content.ClipData.newPlainText("terminal", lines.subList(minOf(anchor, end), maxOf(anchor, end) + 1).joinToString("\n")))
+                        .setPrimaryClip(com.secrm.ui.sensitiveClip("terminal", lines.subList(minOf(anchor, end), maxOf(anchor, end) + 1).joinToString("\n")))
                     onClose()
                 }.padding(Space.sm)) {
                     Text("Copy", style = MaterialTheme.mono, color = if (anchor < 0) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f) else MaterialTheme.colorScheme.primary)

@@ -33,7 +33,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -70,7 +70,7 @@ internal fun AccessibilityOverlay(
     isReviewMode: Boolean = false,
 ) {
     val density = LocalDensity.current
-    val clipboardManager = LocalClipboardManager.current
+    val clipContext = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
     // State for live region announcements (replaces deprecated announceForAccessibility)
@@ -139,6 +139,9 @@ internal fun AccessibilityOverlay(
                         },
                     )
                     .semantics {
+                        // Outside review mode the line's text and actions are not exposed, so an enabled service cannot read
+                        // the screen, passwords included, until the owner enters review mode.
+                        if (!isReviewMode) return@semantics
                         // Use text property for granular navigation (words/characters)
                         // Only use contentDescription for semantic segments
                         if (line.semanticSegments.isEmpty() ||
@@ -156,7 +159,7 @@ internal fun AccessibilityOverlay(
                             // Copy Line
                             add(
                                 CustomAccessibilityAction("Copy Line") {
-                                    clipboardManager.setText(buildAnnotatedString { append(line.text) })
+                                    copySensitive(clipContext, "terminal line", line.text)
                                     true
                                 },
                             )

@@ -18,10 +18,13 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.secrm.SecureRemoteApp
 import com.secrm.core.ssh.SshState
+import com.secrm.core.ssh.hostKeyFingerprint
 import com.secrm.design.Motion
 import com.secrm.design.SecrmIcons
 import com.secrm.design.StatusDot
 import com.secrm.design.ConnectionVisual
+import com.secrm.ui.audit.AuditScreen
+import com.secrm.ui.jobs.JobsScreen
 import com.secrm.ui.dashboard.DashboardScreen
 import com.secrm.ui.keys.KeyManagementScreen
 import com.secrm.ui.server.ServerControlScreen
@@ -34,6 +37,8 @@ object Routes {
     const val Files = "files"
     const val Keys = "keys"
     const val Settings = "settings"
+    const val Audit = "audit"
+    const val Jobs = "jobs"
 }
 
 private data class Tab(val route: String, val label: String, val icon: ImageVector, val needsConnection: Boolean = false)
@@ -58,6 +63,25 @@ fun SecrmNavHost(app: SecureRemoteApp) {
     val nav = rememberNavController()
     val connected = app.sessions.connected.collectAsState().value.isNotEmpty()
     val current = nav.currentBackStackEntryAsState().value?.destination?.route
+
+    // Shown over any screen: a changed host key must not go unnoticed behind a tab.
+    app.sessions.keyChange.collectAsState().value?.let { change ->
+        AlertDialog(
+            onDismissRequest = { app.sessions.dismissKeyChange() },
+            title = { Text("Host key changed") },
+            text = {
+                Text(
+                    "${change.conn.name} is presenting a different key than the one you trusted.\n\n" +
+                        "Trusted:   ${hostKeyFingerprint(change.pinned)}\n" +
+                        "Presented: ${hostKeyFingerprint(change.presented)}\n\n" +
+                        "A reinstalled server does this, and so does someone intercepting the connection. " +
+                        "Trust the new key only if you know the server changed."
+                )
+            },
+            confirmButton = { TextButton(onClick = { app.sessions.trustNewKey(change) }) { Text("Trust new key") } },
+            dismissButton = { TextButton(onClick = { app.sessions.dismissKeyChange() }) { Text("Cancel") } },
+        )
+    }
 
     Scaffold(
         // Screens inside lay themselves out against the system bars; this scaffold only adds the bar.
@@ -100,13 +124,17 @@ fun SecrmNavHost(app: SecureRemoteApp) {
                     app,
                     onOpenHosts = { nav.goTab(Routes.Hosts) },
                     onOpenTerminal = { dir ->
-                        app.sessions.current.value?.terminal()?.send("cd '" + dir.replace("'", "'\\''") + "'\r")
+                        // Control characters would be sent to the shell as keystrokes, so they are dropped from the path.
+                        val safe = dir.filter { it >= ' ' && it != '\u007f' }
+                        app.sessions.current.value?.terminal()?.send("cd '" + safe.replace("'", "'\\''") + "'\r")
                         nav.goTab(Routes.Terminal)
                     },
                 )
             }
             composable(Routes.Keys) { KeyManagementScreen(app) }
-            composable(Routes.Settings) { ServerControlScreen(app) }
+            composable(Routes.Settings) { ServerControlScreen(app, onOpenAudit = { nav.navigate(Routes.Audit) }, onOpenJobs = { nav.navigate(Routes.Jobs) }) }
+            composable(Routes.Audit) { AuditScreen(app, onBack = { nav.popBackStack() }) }
+            composable(Routes.Jobs) { JobsScreen(app, onBack = { nav.popBackStack() }) }
         }
     }
 }

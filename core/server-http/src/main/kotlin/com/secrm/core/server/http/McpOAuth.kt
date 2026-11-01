@@ -80,6 +80,8 @@ class McpOAuth(
             "authorization_code" -> {
                 val c = params["code"]?.let(codes::remove) ?: return null
                 val verifier = params["code_verifier"] ?: return null
+                // RFC 7636 4.1: 43 to 128 characters.
+                if (verifier.length !in 43..128) return null
                 // RFC 6749 4.1.3: redirect_uri is required here when the authorize request sent one.
                 if (c.expires < now() || params["redirect_uri"] != c.redirect) return null
                 if (!MessageDigest.isEqual(b64(sha256(verifier.toByteArray())).toByteArray(), c.challenge.toByteArray())) return null
@@ -90,12 +92,18 @@ class McpOAuth(
                 val key = sha(params["refresh_token"] ?: return null)
                 val r = tokens[key] ?: return null
                 if (r.kind == 'c') {
-                    tokens.values.removeAll { it.family == r.family }
-                    persist()
-                    return null
+                    // A retry just after a successful refresh (its response was lost) gets the next pair; a later reuse is a theft.
+                    val consumed = consumedAt[key]
+                    if (consumed == null || now() - consumed > REUSE_GRACE_MS) {
+                        tokens.values.removeAll { it.family == r.family }
+                        persist()
+                        return null
+                    }
+                } else {
+                    if (r.kind != 'r' || r.expires < now()) return null
+                    tokens[key] = r.copy(kind = 'c')
+                    consumedAt[key] = now()
                 }
-                if (r.kind != 'r' || r.expires < now()) return null
-                tokens[key] = r.copy(kind = 'c')
                 family = r.family
             }
             else -> return null
@@ -103,17 +111,23 @@ class McpOAuth(
         val access = token()
         val refresh = token()
         tokens.values.removeAll { it.expires < now() }
+        consumedAt.values.removeAll { now() - it > REUSE_GRACE_MS }
         tokens[sha(access)] = Entry('a', now() + HOUR, family)
         tokens[sha(refresh)] = Entry('r', now() + 30 * DAY, family)
         persist()
         return access to refresh
     }
 
+    /** When each consumed refresh token was used. Not persisted: after a restart a reuse is treated as theft. */
+    private val consumedAt = HashMap<String, Long>()
+
     private fun persist() = save(tokens.entries.joinToString("\n") { "${it.key} ${it.value.kind} ${it.value.expires} ${it.value.family}" })
     private fun token() = b64(ByteArray(32).also(random::nextBytes))
     private fun sha(s: String) = sha256(s.toByteArray()).joinToString("") { "%02x".format(it) }
 
     companion object {
+        /** How long after a refresh a retry of the same refresh token is treated as a lost response, not a theft. */
+        const val REUSE_GRACE_MS = 30_000L
         const val ACCESS_SECONDS = 3600
         private const val MINUTE = 60_000L
         private const val HOUR = 60 * MINUTE
@@ -124,6 +138,6 @@ class McpOAuth(
 
         /** Claude's OAuth callbacks only. */
         fun allowedRedirect(uri: String?) = runCatching { URI(uri) }.getOrNull()
-            ?.let { it.scheme == "https" && it.host in setOf("claude.ai", "claude.com") } == true
+            ?.let { it.scheme == "https" && it.host?.lowercase() in setOf("claude.ai", "claude.com") && it.path == "/api/mcp/auth_callback" } == true
     }
 }

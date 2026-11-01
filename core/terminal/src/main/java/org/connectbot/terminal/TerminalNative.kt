@@ -36,6 +36,11 @@ import java.nio.ByteBuffer
  * - Callbacks MUST NOT call back into Terminal methods (will deadlock)
  * - Safe to call from multiple threads (serialized by native mutex)
  */
+/** Where a copy of the native library goes when the class loader already has one. The app sets it to a private directory. */
+object NativeLibraryFallback {
+    @Volatile var dir: File? = null
+}
+
 internal class TerminalNative(callbacks: TerminalCallbacks) : AutoCloseable {
     private var nativePtr: Long = 0
     private val lifetimeLock = ReentrantLock(true)
@@ -204,8 +209,12 @@ internal class TerminalNative(callbacks: TerminalCallbacks) : AutoCloseable {
     private external fun nativeDispatchKey(ptr: Long, modifiers: Int, key: Int): Boolean
     private external fun nativeDispatchCharacter(ptr: Long, modifiers: Int, character: Int): Boolean
     private external fun nativePaste(ptr: Long, data: ByteArray)
+    private external fun nativeBracketedPaste(ptr: Long): Boolean
 
     fun pasteText(data: ByteArray) = withNative { nativePaste(nativePtr, data) }
+
+    /** Whether the remote program has turned on bracketed paste (DEC mode 2004). */
+    fun bracketedPaste(): Boolean = withNative { nativeBracketedPaste(nativePtr) }
     private external fun nativeGetCells(ptr: Long, buffer: ByteBuffer, requests: Int): Int
     private external fun nativeSetPaletteColors(ptr: Long, colors: IntArray, count: Int): Int
     private external fun nativeSetDefaultColors(ptr: Long, fgColor: Int, bgColor: Int): Int
@@ -241,7 +250,8 @@ internal class TerminalNative(callbacks: TerminalCallbacks) : AutoCloseable {
                 .firstOrNull { it.isFile }
                 ?: throw cause
 
-            val target = File.createTempFile("${LIBRARY_NAME}-", "-$mappedName")
+            val dir = NativeLibraryFallback.dir ?: throw cause
+            val target = File.createTempFile("${LIBRARY_NAME}-", "-$mappedName", dir)
             target.deleteOnExit()
             source.copyTo(target, overwrite = true)
             System.load(target.absolutePath)

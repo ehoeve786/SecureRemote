@@ -204,7 +204,6 @@ private fun KeyImportSheet(
                 pem = text
                 // Auto-detect algorithm from the PEM header
                 algo = when {
-                    text.contains("BEGIN OPENSSH PRIVATE KEY") -> "openssh"
                     text.contains("BEGIN RSA PRIVATE KEY") -> "ssh-rsa"
                     text.contains("BEGIN EC PRIVATE KEY") -> "ecdsa-sha2-nistp256"
                     else -> algo
@@ -238,9 +237,14 @@ private fun KeyImportSheet(
 
             if (initial == null) {
                 Text("Private key", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                val notAKey = pem.isNotBlank() && !isPrivateKeyPem(pem)
                 OutlinedTextField(pem, { pem = it },
                     label = { Text("Paste PEM") },
                     placeholder = { Text("-----BEGIN OPENSSH PRIVATE KEY-----") },
+                    isError = notAKey,
+                    supportingText = {
+                        if (notAKey) Text("Not a private key. Paste an OpenSSH or PEM private key block.")
+                    },
                     minLines = 4, maxLines = 8,
                     // The key is secret material: keep it out of the IME and out of plain view.
                     keyboardOptions = KeyboardOptions(autoCorrect = false),
@@ -281,3 +285,7 @@ private fun KeyImportSheet(
 
 /** Real keys are a few kilobytes; anything larger is not a key file. */
 private const val MAX_KEY_BYTES = 64 * 1024
+
+/** A PEM or OpenSSH private key block. Anything else is refused at import, not at connect. */
+private fun isPrivateKeyPem(text: String) =
+    Regex("-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\\s\\S]*-----END [A-Z0-9 ]*PRIVATE KEY-----").containsMatchIn(text)

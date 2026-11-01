@@ -6,11 +6,13 @@ import android.graphics.Color
 import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.SideEffect
 import androidx.fragment.app.FragmentActivity
 import com.secrm.design.SecrmTheme
 import com.secrm.design.isDark
 import com.secrm.ui.KeystoreRecoveryPrompt
 import com.secrm.ui.SecrmNavHost
+import com.secrm.ui.applyScreenshotPolicy
 
 /** FragmentActivity: required by BiometricPrompt. */
 class MainActivity : FragmentActivity() {
@@ -20,6 +22,10 @@ class MainActivity : FragmentActivity() {
         if ((application as SecureRemoteApp).tailscale.enabled) com.secrm.service.McpServerService.start(this)
         val app = application as SecureRemoteApp
         setContent {
+            // Keeps tokens, keys, the audit log and terminal output out of screenshots, screen recordings and the
+            // recent-apps preview, unless the owner allowed screenshots in Settings.
+            val allowShots = app.ui.allowScreenshots
+            SideEffect { window.applyScreenshotPolicy(allowShots) }
             val dark = isDark(app.ui.mode)
             // Transparent system bars, with icons that stay readable on the chosen theme.
             DisposableEffect(dark) {

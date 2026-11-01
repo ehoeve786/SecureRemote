@@ -124,6 +124,9 @@ func (c *wgConfig) set(key, value string) (err error) {
 		}
 	case "listenport":
 		c.ListenPort, err = strconv.Atoi(value)
+		if err == nil && (c.ListenPort < 0 || c.ListenPort > 65535) {
+			err = fmt.Errorf("ListenPort %d is outside 0-65535", c.ListenPort)
+		}
 	}
 	return err
 }
@@ -150,6 +153,9 @@ func (p *wgPeer) set(key, value string) (err error) {
 	case "persistentkeepalive":
 		if value != "off" {
 			p.Keepalive, err = strconv.Atoi(value)
+			if err == nil && (p.Keepalive < 0 || p.Keepalive > 65535) {
+				err = fmt.Errorf("PersistentKeepalive %d is outside 0-65535", p.Keepalive)
+			}
 		}
 	}
 	return err
@@ -189,7 +195,7 @@ func (c *wgConfig) uapi(resolve func(hostport string) (netip.AddrPort, error)) (
 func parseKey(s string) ([]byte, error) {
 	k, err := base64.StdEncoding.DecodeString(s)
 	if err != nil || len(k) != 32 {
-		return nil, fmt.Errorf("%q is not a WireGuard key", abbreviate(s))
+		return nil, fmt.Errorf("not a WireGuard key (%d characters)", len(s))
 	}
 	return k, nil
 }
@@ -213,12 +219,4 @@ func splitList(s string) []string {
 		}
 	}
 	return out
-}
-
-// abbreviate keeps error messages from echoing secrets in full.
-func abbreviate(s string) string {
-	if len(s) > 6 {
-		return s[:6] + "…"
-	}
-	return s
 }

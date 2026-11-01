@@ -9,6 +9,7 @@ import com.secrm.HostSessions
 import com.secrm.core.ssh.SftpClient
 import com.secrm.core.ssh.SftpEntry
 import com.secrm.core.ssh.SshClientManager
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -38,6 +39,8 @@ data class SftpUiState(
     /** A quick change (create, rename, delete, paste) is in flight. */
     val working: String? = null,
     val transfer: Transfer? = null,
+    /** Transfers waiting behind [transfer], which run one after another. */
+    val queued: Int = 0,
     /** Paths picked in multi-select; empty when not selecting. */
     val selected: Set<String> = emptySet(),
 )
@@ -64,11 +67,15 @@ class SftpController(
     private var listing: Job? = null
     private var home: String? = null
     @Volatile private var cancelRequested = false
+    /** Transfers run one at a time, in the order they were asked for. */
+    private val jobs = Channel<suspend () -> Unit>(Channel.UNLIMITED)
 
     private val _state = MutableStateFlow(SftpUiState())
     val state: StateFlow<SftpUiState> = _state.asStateFlow()
     private val _messages = MutableSharedFlow<SftpMessage>(extraBufferCapacity = 8)
     val messages: SharedFlow<SftpMessage> = _messages.asSharedFlow()
+
+    init { scope.launch { for (job in jobs) job() } }
 
     /** Call when the screen shows: starts at the home folder for a new session, otherwise keeps what it had. */
     fun sync() {
@@ -111,6 +118,7 @@ class SftpController(
     fun delete(items: List<SftpEntry>) = change(if (items.size == 1) "Deleting ${items[0].name}" else "Deleting ${items.size} items") {
         items.forEach { client.delete(it) }
     }
+    /** Stops the running transfer and clears the waiting ones. */
     fun cancelTransfer() { cancelRequested = true }
 
     // Selection
@@ -153,7 +161,7 @@ class SftpController(
     private fun pasteFrom(clip: Clip, dir: String) {
         val source = sessions.find(clip.host)?.files
             ?: return fail(IllegalStateException("${clip.host} is no longer connected"))
-        transfer(Transfer(true, "", 0, 0, 1, clip.entries.size)) { _ ->
+        transfer(Transfer(true, clip.entries.singleOrNull()?.name ?: "${clip.entries.size} items", 0, 0, 1, clip.entries.size)) { _ ->
             withContext(Dispatchers.IO) {
                 val taken = _state.value.entries.mapTo(HashSet()) { it.name }
                 for ((i, e) in clip.entries.withIndex()) {
@@ -172,11 +180,12 @@ class SftpController(
 
     /** Copies [e] from [src] into [dir] as [name], folders recursively, via a temporary file on the phone. */
     private suspend fun importEntry(src: SftpClient, e: SftpEntry, dir: String, name: String) {
+        // A link to a folder is skipped: following it can loop back into the tree being copied.
+        if (e.isDir && e.isLink) return
         val to = SftpClient.join(dir, name)
         if (e.isDir) {
             runCatching { client.mkdir(to) } // already there is fine
-            // Linked folders are skipped: a link to / or to a parent would copy the whole tree or loop.
-            for (c in src.list(e.path)) { if (cancelRequested) return; if (!(c.isDir && c.isLink)) importEntry(src, c, to, c.name) }
+            for (c in src.list(e.path)) { if (cancelRequested) return; importEntry(src, c, to, c.name) }
         } else {
             _state.update { it.copy(transfer = it.transfer?.copy(name = e.name, done = 0, total = e.size)) }
             val tmp = java.io.File.createTempFile("xfer", null, app.cacheDir)
@@ -195,20 +204,45 @@ class SftpController(
 
     // Transfers
 
+    /**
+     * Downloads into a partial file in the app cache, so a failed or cancelled download resumes from where it
+     * stopped. The partial is copied to [dest] only when complete. The partial is keyed by remote path and size,
+     * so a changed remote file starts over.
+     */
     fun download(e: SftpEntry, dest: Uri) {
         transfer(Transfer(false, e.name, 0, e.size, 1, 1)) { setProgress ->
-            val ok = try {
+            val partial = partialFile(e)
+            val resume = partial.length().takeIf { it in 1 until e.size } ?: 0L
+            if (resume == 0L) partial.delete()
+            setProgress(resume)
+            try {
                 withContext(Dispatchers.IO) {
-                    app.contentResolver.openOutputStream(dest)!!.use { client.download(e.path, it, { cancelRequested }, setProgress) }
+                    java.io.FileOutputStream(partial, resume > 0).use { out ->
+                        client.downloadFrom(e.path, out, resume, { cancelRequested }) { n -> setProgress(resume + n) }
+                    }
                 }
             } catch (t: Throwable) {
-                // Don't leave a truncated file behind after a failed download.
+                // The destination is not left behind; the partial stays for the next attempt.
                 runCatching { DocumentsContract.deleteDocument(app.contentResolver, dest) }
                 throw t
             }
-            if (cancelRequested) runCatching { DocumentsContract.deleteDocument(app.contentResolver, dest) }
-            ok
+            if (cancelRequested) {
+                runCatching { DocumentsContract.deleteDocument(app.contentResolver, dest) }
+                return@transfer
+            }
+            withContext(Dispatchers.IO) {
+                app.contentResolver.openOutputStream(dest)!!.use { out -> partial.inputStream().use { it.copyTo(out) } }
+            }
+            partial.delete()
         }
+    }
+
+    private fun partialFile(e: SftpEntry): java.io.File {
+        val dir = java.io.File(app.cacheDir, "sftp-partial").apply { mkdirs() }
+        val key = java.security.MessageDigest.getInstance("SHA-256")
+            .digest("${e.path}|${e.size}|${e.mtime}".toByteArray())
+            .joinToString("") { "%02x".format(it) }
+        return java.io.File(dir, key)
     }
 
     /** Saves files and folders (folders recursively) into the folder the user picked. */
@@ -222,11 +256,12 @@ class SftpController(
     }
 
     private suspend fun saveTo(e: SftpEntry, parent: DocumentFile, setProgress: (Long) -> Unit) {
+        // A link to a folder is skipped: following it can loop back into the tree being saved.
+        if (e.isDir && e.isLink) return
         if (e.isDir) {
             val d = parent.findFile(e.name)?.takeIf { it.isDirectory } ?: parent.createDirectory(e.name)
                 ?: error("Couldn't create ${e.name}")
-            // Linked folders are skipped, as in importEntry.
-            for (c in client.list(e.path)) { if (cancelRequested) return; if (!(c.isDir && c.isLink)) saveTo(c, d, setProgress) }
+            for (c in client.list(e.path)) { if (cancelRequested) return; saveTo(c, d, setProgress) }
         } else {
             val f = parent.createFile("application/octet-stream", e.name) ?: error("Couldn't create ${e.name}")
             try {
@@ -241,22 +276,46 @@ class SftpController(
 
     fun upload(uris: List<Uri>) {
         val dir = _state.value.path ?: return
-        // A new name for every upload: an upload never replaces a file already in the folder, and a
-        // cancelled one removes only the file it created.
-        val taken = _state.value.entries.mapTo(HashSet()) { it.name }
+        // A new name for every upload: an upload never replaces a file already in the folder. The name is
+        // chosen when the upload runs, not when it is queued, so an earlier queued upload's file is already counted.
+        // Bytes go to a partial file first; an interrupted upload resumes from it, and it is renamed when complete.
         transfer(null) { _ ->
+            val taken = client.list(dir).mapTo(HashSet()) { it.name }
             uris.forEachIndexed { i, u ->
                 if (cancelRequested) return@forEachIndexed
                 val (given, size) = describe(u)
-                val name = uniqueName(given, taken).also { taken += it }
-                val remote = SftpClient.join(dir, name)
+                val name = uniqueName(safeName(given), taken).also { taken += it }
                 _state.update { it.copy(transfer = Transfer(true, name, 0, size, i + 1, uris.size)) }
+                val part = SftpClient.join(dir, partialName(u, size))
+                val offset = client.sizeOf(part).takeIf { it in 1 until size } ?: 0L
+                if (offset == 0L) client.removeQuietly(part)
                 withContext(Dispatchers.IO) {
-                    runCatching {
-                        app.contentResolver.openInputStream(u)!!.use { client.upload(it, remote, { cancelRequested }) { n -> progress(n) } }
-                    }.onFailure { if (cancelRequested) client.removeQuietly(remote) else throw it }
+                    app.contentResolver.openInputStream(u)!!.use { input ->
+                        skipFully(input, offset)
+                        client.uploadPart(input, part, offset, { cancelRequested }) { n -> progress(offset + n) }
+                    }
                 }
+                // A cancel or failure above keeps the partial file, so the next attempt resumes it.
+                if (cancelRequested) return@forEachIndexed
+                client.rename(part, SftpClient.join(dir, name))
             }
+        }
+    }
+
+    /** Remote name for an upload's partial file: the same source and size always map to the same name. */
+    private fun partialName(u: Uri, size: Long): String {
+        val key = java.security.MessageDigest.getInstance("SHA-256")
+            .digest("$u|$size".toByteArray())
+            .take(8).joinToString("") { "%02x".format(it) }
+        return ".secrm-$key.part"
+    }
+
+    private fun skipFully(input: java.io.InputStream, bytes: Long) {
+        var left = bytes
+        while (left > 0) {
+            val skipped = input.skip(left)
+            if (skipped <= 0) break
+            left -= skipped
         }
     }
 
@@ -266,7 +325,7 @@ class SftpController(
         val root = DocumentFile.fromTreeUri(app, tree) ?: return fail(IllegalStateException("Can't read that folder"))
         val given = root.name ?: return fail(IllegalStateException("Can't read that folder"))
         // The folder gets a new name too, so its files cannot be mixed into one already there.
-        val name = uniqueName(given, _state.value.entries.mapTo(HashSet()) { it.name })
+        val name = uniqueName(safeName(given), _state.value.entries.mapTo(HashSet()) { it.name })
         transfer(Transfer(true, name, 0, 0, 1, 1)) { _ ->
             withContext(Dispatchers.IO) { putTree(root, dir, name) }
         }
@@ -276,7 +335,7 @@ class SftpController(
         val remote = SftpClient.join(dir, name)
         if (src.isDirectory) {
             runCatching { client.mkdir(remote) } // already there is fine
-            for (c in src.listFiles()) { if (cancelRequested) return; putTree(c, remote, c.name ?: continue) }
+            for (c in src.listFiles()) { if (cancelRequested) return; putTree(c, remote, safeName(c.name ?: continue)) }
         } else {
             _state.update { it.copy(transfer = it.transfer?.copy(name = name, done = 0, total = src.length())) }
             try {
@@ -290,10 +349,15 @@ class SftpController(
 
     private fun progress(done: Long) = _state.update { s -> s.copy(transfer = s.transfer?.copy(done = done)) }
 
+    /** Queues a transfer behind any already running. Cancel stops the running one and drops the rest. */
     private fun transfer(first: Transfer?, block: suspend ((Long) -> Unit) -> Unit) {
-        if (_state.value.transfer != null) return
-        cancelRequested = false
-        scope.launch {
+        _state.update { it.copy(queued = it.queued + 1) }
+        jobs.trySend {
+            _state.update { it.copy(queued = it.queued - 1) }
+            if (cancelRequested) {
+                if (_state.value.queued == 0) cancelRequested = false
+                return@trySend
+            }
             _state.update { it.copy(transfer = first ?: Transfer(true, "", 0, 0, 1, 1)) }
             val result = runCatching { block(::progress) }
             _state.update { it.copy(transfer = null) }
@@ -303,6 +367,7 @@ class SftpController(
                 t != null -> fail(t)
                 else -> _messages.tryEmit(SftpMessage("Transfer complete"))
             }
+            if (_state.value.queued == 0) cancelRequested = false
             refresh()
         }
     }
@@ -333,6 +398,16 @@ class SftpController(
         var candidate = "$stem copy$ext"
         while (candidate in taken) { n++; candidate = "$stem copy $n$ext" }
         return candidate
+    }
+
+    /**
+     * A name supplied by a picker or a content provider, reduced to one path component: separators and NULs
+     * become underscores, and "." and ".." (or an empty name) fall back to a plain name. The upload then
+     * stays inside the folder the user is browsing.
+     */
+    private fun safeName(name: String): String {
+        val cleaned = name.replace('/', '_').replace('\u0000', '_').trim()
+        return if (cleaned.isEmpty() || cleaned == "." || cleaned == "..") "upload" else cleaned
     }
 
     private fun describe(u: Uri): Pair<String, Long> {

@@ -1,6 +1,8 @@
 package com.secrm
 
 import android.app.Application
+import android.net.ConnectivityManager
+import android.net.Network
 import com.secrm.core.domain.CallDispatcher
 import com.secrm.core.domain.Session
 import com.secrm.core.domain.ToolResult
@@ -8,6 +10,7 @@ import com.secrm.core.mcp.AuditEntry
 import com.secrm.core.mcp.McpAuditLog
 import com.secrm.core.security.EncryptedConfigStore
 import com.secrm.core.ssh.SshClientManager
+import com.secrm.core.ssh.tools.NamedCommand
 import com.secrm.core.ssh.tools.SshTools
 import com.secrm.core.tunnel.TailscaleTunnel
 import com.secrm.core.tunnel.WireGuardTunnel
@@ -16,9 +19,14 @@ import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
-import com.secrm.data.BitwardenVault
 import com.secrm.data.ConnectionRepository
 import com.secrm.data.KeyRepository
+import com.secrm.data.AgentTokens
+import com.secrm.data.JobStore
+import com.secrm.data.McpPrefs
+import com.secrm.service.JobScheduling
+import com.secrm.data.SnippetStore
+import com.secrm.service.McpServerService
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
@@ -30,9 +38,12 @@ class SecureRemoteApp : Application() {
     lateinit var dispatcher: CallDispatcher; private set
     lateinit var connections: ConnectionRepository; private set
     lateinit var keys: KeyRepository; private set
-    lateinit var vault: BitwardenVault; private set
     lateinit var oauth: com.secrm.core.server.http.McpOAuth; private set
     lateinit var ui: com.secrm.data.UiPrefs; private set
+    lateinit var mcp: McpPrefs; private set
+    lateinit var agents: AgentTokens; private set
+    lateinit var snippets: SnippetStore; private set
+    lateinit var jobs: JobStore; private set
     /** The connected hosts, each with its own shell and file browser. */
     val sessions by lazy { HostSessions(this) }
 
@@ -44,23 +55,31 @@ class SecureRemoteApp : Application() {
             t.start() // no-op if already running
             runBlocking { withTimeoutOrNull(30_000) { t.state.first { it is Tunnel.State.Up } } }
                 ?: error("$name isn't connected. Check Settings → Private network.")
-            com.secrm.data.TunnelProxy { host, port -> t.dial(host, port, 30_000) }
+            com.secrm.data.TunnelProxy { host, port, timeoutMs -> t.dial(host, port, if (timeoutMs > 0) timeoutMs else 30_000) }
         }
     }
 
     override fun onCreate() {
         super.onCreate()
+        org.connectbot.terminal.NativeLibraryFallback.dir = codeCacheDir
         config = EncryptedConfigStore(this)
         ui = com.secrm.data.UiPrefs(this)
+        mcp = McpPrefs(this)
+        agents = AgentTokens(config)
+        snippets = SnippetStore(config)
+        jobs = JobStore(config)
+        JobScheduling.sync(this, jobs.list().isNotEmpty())
+        // Bitwarden was removed: drop its stored login and wrapped key.
+        listOf("bw.server", "bw.client_id", "bw.client_secret", "bw.user_key", "bw.device").forEach { config.remove(it) }
+        runCatching { java.security.KeyStore.getInstance("AndroidKeyStore").apply { load(null) }.deleteEntry("secrm_bitwarden") }
         val scope = MainScope()
         tailscale = TailscaleTunnel(this, scope, targetPort = 7824).apply { resume() }
         wireguard = WireGuardTunnel(this, scope, { config.get("wg.config") },
             { it?.let { c -> config.put("wg.config", c) } ?: config.remove("wg.config") }).apply { resume() }
         audit = McpAuditLog(this)
         keys = KeyRepository(config)
-        vault = BitwardenVault(config)
         oauth = com.secrm.core.server.http.McpOAuth({ config.get("mcp.oauth") }, { config.put("mcp.oauth", it) })
-        connections = ConnectionRepository(config, keys, vault)
+        connections = ConnectionRepository(config, keys)
         dispatcher = CallDispatcher(object : CallDispatcher.AuditSink {
             override suspend fun record(
                 s: Session, tool: String, args: JsonObject, result: ToolResult, durationNanos: Long
@@ -71,16 +90,42 @@ class SecureRemoteApp : Application() {
                     argsRedacted = redacted(args).toString(),
                     outcome = if (result.isError) "error" else "ok",
                     durationMs = durationNanos / 1_000_000,
-                    client = s.id
+                    client = s.clientLabel,
                 ))
+                McpServerService.noteActivity()
             }
         })
-        SshTools.register(dispatcher, connections, newClient())
+        SshTools.register(dispatcher, connections, newClient()) {
+            snippets.list().map { NamedCommand(it.name, it.command) }
+        }
+        watchNetwork()
+    }
+
+    /** A network change can leave a tunnel that reads as Up but routes nothing; restart both once the network is back. */
+    private fun watchNetwork() {
+        var lost = false
+        getSystemService(ConnectivityManager::class.java)
+            .registerDefaultNetworkCallback(object : ConnectivityManager.NetworkCallback() {
+                override fun onLost(network: Network) { lost = true }
+                override fun onAvailable(network: Network) {
+                    if (!lost) return
+                    lost = false
+                    tailscale.restart()
+                    wireguard.restart()
+                }
+            })
     }
 
     /** Commands and secrets never reach the audit log; their length does, so the entry is still useful. */
     private fun redacted(args: JsonObject) = JsonObject(args.mapValues { (k, v) ->
-        if (k in SECRET_ARGS) JsonPrimitive("[redacted ${v.toString().length} chars]") else v
+        when {
+            k in SECRET_ARGS -> JsonPrimitive("[redacted ${v.toString().length} chars]")
+            // Snippet variables are values an agent passes in, often passwords. Keep their names, not their values.
+            k == "variables" && v is JsonObject -> JsonObject(v.mapValues { (_, value) ->
+                JsonPrimitive("[redacted ${value.toString().length} chars]")
+            })
+            else -> v
+        }
     })
 
     private companion object {

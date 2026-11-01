@@ -448,6 +448,11 @@ void Terminal::paste(JNIEnv* env, jbyteArray data) {
     vterm_keyboard_end_paste(mVt);
 }
 
+bool Terminal::bracketedPaste() {
+    LockGuard lock(mLock, mLockHolder);
+    return mVt && vterm_state_get_bracketpaste(vterm_obtain_state(mVt));
+}
+
 bool Terminal::dispatchKey(int modifiers, int key) {
     LockGuard lock(mLock, mLockHolder);
 
@@ -1154,6 +1159,12 @@ Java_org_connectbot_terminal_TerminalNative_nativeDispatchCharacter(JNIEnv* /* e
 JNIEXPORT void JNICALL
 Java_org_connectbot_terminal_TerminalNative_nativePaste(JNIEnv* env, jobject, jlong ptr, jbyteArray data) {
     if (auto* term = reinterpret_cast<Terminal*>(ptr)) term->paste(env, data);
+}
+
+JNIEXPORT jboolean JNICALL
+Java_org_connectbot_terminal_TerminalNative_nativeBracketedPaste(JNIEnv*, jobject, jlong ptr) {
+    auto* term = reinterpret_cast<Terminal*>(ptr);
+    return term && term->bracketedPaste();
 }
 
 JNIEXPORT jint JNICALL
