@@ -93,7 +93,8 @@ class HostSessions(private val app: SecureRemoteApp) {
 
     /** Records the presented key as the one to trust for [change]'s host. The next connect will pin to it. */
     fun trustNewKey(change: KeyChange) {
-        app.connections.save(change.conn.copy(hostKey = change.presented))
+        // On the latest record, not the copy taken at connect time, so an edit made since (such as an MCP flag turned off) is kept.
+        app.connections.update(change.conn.name) { it.copy(hostKey = change.presented) }
         keyChange.value = null
     }
 

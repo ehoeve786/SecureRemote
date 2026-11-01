@@ -93,16 +93,24 @@ class McpSessionPool(
         return client
     }
 
-    /** Caller holds [lock]. A session with port forwards open is kept: closing it would close the forwards. */
+    /**
+     * Caller holds [lock]. A session with port forwards open is kept: closing it would close the forwards.
+     * It is still closed once the owner turns off MCP read access (which forwards need) or deletes the connection.
+     */
     private fun scheduleReap(e: Entry) {
         e.reaper?.cancel()
         e.reaper = scope.launch {
             delay(idleMs)
             lock.withLock {
                 if (e.users != 0 || entries[e.conn.name] !== e) return@withLock
-                if (e.client.forwards.value.isEmpty()) evict(e) else scheduleReap(e)
+                if (e.client.forwards.value.isEmpty() || saved.find(e.conn.name)?.allowMcpRead != true) evict(e) else scheduleReap(e)
             }
         }
+    }
+
+    /** Closes every shared session and the forwards on them: for when MCP is stopped or a client is revoked. */
+    fun closeAll() {
+        scope.launch { lock.withLock { entries.values.toList().forEach(::evict) } }
     }
 
     /** Caller holds [lock]. */

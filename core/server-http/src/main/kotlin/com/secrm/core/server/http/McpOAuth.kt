@@ -76,6 +76,7 @@ class McpOAuth(
     @Synchronized
     fun token(params: Map<String, String?>): Pair<String, String>? {
         var family = token()
+        var refreshedFrom: String? = null
         when (params["grant_type"]) {
             "authorization_code" -> {
                 val c = params["code"]?.let(codes::remove) ?: return null
@@ -99,12 +100,20 @@ class McpOAuth(
                         persist()
                         return null
                     }
+                    // Only one pair may stay live: the one this retry gets. The first pair's access token goes, and its
+                    // refresh token is marked used, so if both copies were real (one stolen) the other's next refresh
+                    // revokes the family.
+                    reissued.remove(key)?.let { (a, rf) ->
+                        tokens.remove(a)
+                        tokens[rf]?.let { tokens[rf] = it.copy(kind = 'c'); consumedAt.remove(rf) }
+                    }
                 } else {
                     if (r.kind != 'r' || r.expires < now()) return null
                     tokens[key] = r.copy(kind = 'c')
                     consumedAt[key] = now()
                 }
                 family = r.family
+                refreshedFrom = key
             }
             else -> return null
         }
@@ -112,14 +121,19 @@ class McpOAuth(
         val refresh = token()
         tokens.values.removeAll { it.expires < now() }
         consumedAt.values.removeAll { now() - it > REUSE_GRACE_MS }
+        reissued.keys.retainAll(consumedAt.keys)
         tokens[sha(access)] = Entry('a', now() + HOUR, family)
         tokens[sha(refresh)] = Entry('r', now() + 30 * DAY, family)
+        refreshedFrom?.let { reissued[it] = sha(access) to sha(refresh) }
         persist()
         return access to refresh
     }
 
     /** When each consumed refresh token was used. Not persisted: after a restart a reuse is treated as theft. */
     private val consumedAt = HashMap<String, Long>()
+
+    /** Consumed refresh token hash to the (access, refresh) hashes its use issued, while a retry is still allowed. */
+    private val reissued = HashMap<String, Pair<String, String>>()
 
     private fun persist() = save(tokens.entries.joinToString("\n") { "${it.key} ${it.value.kind} ${it.value.expires} ${it.value.family}" })
     private fun token() = b64(ByteArray(32).also(random::nextBytes))

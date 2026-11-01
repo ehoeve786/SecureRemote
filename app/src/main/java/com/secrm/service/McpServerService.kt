@@ -164,6 +164,8 @@ class McpServerService : Service() {
         if (screenReceiverOn) { runCatching { unregisterReceiver(screenOff) }; screenReceiverOn = false }
         server?.stop(); server = null
         _running.value = false
+        // Otherwise an agent's port forwards would stay open after the owner turned MCP off.
+        (application as SecureRemoteApp).mcpSessions.closeAll()
     }
 
     override fun onDestroy() { stopServer(); scope.cancel(); super.onDestroy() }

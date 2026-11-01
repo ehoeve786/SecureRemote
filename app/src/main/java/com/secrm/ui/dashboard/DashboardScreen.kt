@@ -213,6 +213,7 @@ fun DashboardScreen(
                     if (old != null && old.name != conn.name) {
                         app.connections.delete(old.name)
                         app.sessions.close(old.name)
+                        app.jobs.renameConnection(old.name, conn.name)
                     }
                 }
                     .onFailure { Toast.makeText(activity, "Couldn't save host: ${it.message}", Toast.LENGTH_LONG).show() }
