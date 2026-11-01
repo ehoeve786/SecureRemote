@@ -22,6 +22,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
@@ -30,6 +31,7 @@ import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.unit.dp
 import com.secrm.HostSession
 import com.secrm.SecureRemoteApp
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 
@@ -45,7 +47,12 @@ fun HostPager(app: SecureRemoteApp, hosts: List<HostSession>, content: @Composab
     val pager = rememberPagerState(initialPage = index) { hosts.size }
     val scope = rememberCoroutineScope()
     LaunchedEffect(index) { if (pager.currentPage != index) pager.animateScrollToPage(index) }
-    LaunchedEffect(pager.settledPage) { hosts.getOrNull(pager.settledPage)?.let { app.sessions.select(it.name) } }
+    // The first page is skipped: it is the page the tab showed last time (restored with the tab), or the page it was on
+    // when the host list changed, not a swipe. Selecting it would replace the host just tapped on the Hosts screen with
+    // whichever one the tab showed before.
+    LaunchedEffect(pager, hosts) {
+        snapshotFlow { pager.settledPage }.drop(1).collect { page -> hosts.getOrNull(page)?.let { app.sessions.select(it.name) } }
+    }
 
     Column(Modifier.fillMaxSize()) {
         HorizontalPager(
