@@ -359,6 +359,7 @@ private fun ConnectionFormSheet(
     var fallback by remember { mutableStateOf(initial?.fallbackVia) }
     var canExec by remember { mutableStateOf(initial?.allowMcpExec ?: false) }
     var canRead by remember { mutableStateOf(initial?.allowMcpRead ?: false) }
+    var canRediscover by remember { mutableStateOf(initial?.allowMcpRediscover ?: false) }
     var forgetKey by remember { mutableStateOf(false) }
 
     val savedKeys = remember { app.keys.list() }
@@ -489,6 +490,12 @@ private fun ConnectionFormSheet(
                 trailingContent = { Switch(canRead, { canRead = it }) },
                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
             )
+            ListItem(
+                headlineContent = { Text("Find host if its IP changed") },
+                supportingContent = { Text("When Claude connects, search this phone's networks for the same host key") },
+                trailingContent = { Switch(canRediscover, { canRediscover = it }, enabled = canExec || canRead) },
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+            )
 
             if (initial?.hostKey != null) {
                 PillButton(
@@ -518,7 +525,8 @@ private fun ConnectionFormSheet(
                         // Kept only for the same address: a new address is a new host and needs its key approved again.
                         hostKey = if (forgetKey || latest == null || latest.host != host.trim() || latest.port != (portNum ?: 22) || latest.via != via) null else latest.hostKey,
                         allowMcpExec = canExec,
-                        allowMcpRead = canRead
+                        allowMcpRead = canRead,
+                        allowMcpRediscover = canRediscover && (canExec || canRead),
                     ))
                 }
             }

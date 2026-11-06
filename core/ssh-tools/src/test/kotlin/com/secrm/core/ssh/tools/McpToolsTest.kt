@@ -129,4 +129,8 @@ class McpToolsTest {
             put("connection", "box")
         }).errorCode)
     }
+
+    @Test fun mcpRediscoveryIsOffUnlessTheOwnerTurnsItOn() {
+        assertFalse(box(exec = true).allowMcpRediscover)
+    }
 }
