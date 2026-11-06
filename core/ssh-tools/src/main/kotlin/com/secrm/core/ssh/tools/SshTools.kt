@@ -2,14 +2,18 @@ package com.secrm.core.ssh.tools
 
 import com.secrm.core.domain.*
 import com.secrm.core.ssh.SshAuth
+import com.secrm.core.ssh.SftpClient
 import com.secrm.core.ssh.SshClientManager
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.*
+import java.io.File
 
 object SshTools {
 
@@ -35,6 +39,9 @@ object SshTools {
         return if (start - 1 + need <= len) len else start - 1
     }
 
+    private val FOLDER_NAME = Regex("[A-Za-z0-9._-]{1,64}")
+    private const val MAX_DOWNLOAD_FILES = 5_000
+
     private val SERVICE_NAME = Regex("[A-Za-z0-9@._:][A-Za-z0-9@._:-]{0,127}")
 
     /** Which owner flag a tool needs: `allowMcpExec` for running commands, `allowMcpRead` for fixed read-only queries. */
@@ -48,6 +55,10 @@ object SshTools {
         saved: SavedConnections,
         ssh: SshClientManager,
         commands: () -> List<NamedCommand> = { emptyList() },
+        /** Phone folder that ssh.download writes under; null leaves the tool unavailable. */
+        downloadDir: (() -> File)? = null,
+        /** Told about each file ssh.download saved, e.g. so the media index lists it. */
+        onDownloaded: (List<File>) -> Unit = {},
     ): McpSessionPool {
         val pool = McpSessionPool(CoroutineScope(Dispatchers.IO + SupervisorJob()), saved) {
             // A separate client, so this neither replaces nor drops the app's live session.
@@ -252,6 +263,54 @@ object SshTools {
                             put("path", path)
                             put("truncated", truncated)
                             put("content", content)
+                        }.toString())
+                    }
+                }
+            }
+        )
+
+        dispatcher.register(
+            ToolSpec(
+                name = "ssh.download",
+                description = "Copy a file, or a folder and everything under it, from a saved connection to the phone over " +
+                    "SFTP, into Download/SecureRemote/<folder>. Files already there at the same size are kept, so a rerun resumes.",
+                inputSchema = schema(
+                    required = listOf("connection", "remote_path"),
+                    "connection" to field("string", CONNECTION_DOC),
+                    "remote_path" to field("string", "File or folder on the server. Symlinks inside a folder are skipped."),
+                    "folder" to field("string", "Subfolder on the phone: letters, digits, . _ - (max 64). Default: the connection name."),
+                    "max_bytes" to field("integer", "Refuses before copying if the total is larger. Clamped to 1..17179869184. Default 4294967296."),
+                    "timeout_ms" to field("integer", "Clamped to 1000..3600000. Default 600000."),
+                ),
+                annotations = ToolSpec.Annotations(openWorldHint = true)
+            ),
+            object : ToolHandler {
+                override suspend fun call(session: Session, args: JsonObject): ToolResult {
+                    val root = downloadDir ?: return ToolResult.error("not_available",
+                        "Downloads are not set up in this build.", "No download folder configured.")
+                    val remote = args.str("remote_path") ?: return missingArg("remote_path")
+                    val folder = args.str("folder") ?: args.str("connection")?.replace(Regex("[^A-Za-z0-9._-]"), "_")?.take(64)
+                        ?: return missingArg("connection")
+                    if (!FOLDER_NAME.matches(folder) || folder.all { it == '.' }) return ToolResult.error("invalid_argument",
+                        "Use letters, digits, '.', '_' or '-' (max 64).", "Invalid folder: $folder")
+                    val maxBytes = args.long("max_bytes", 4L shl 30, 1L..(16L shl 30))
+                    val timeout = args.long("timeout_ms", 600_000L, 1_000L..3_600_000L)
+                    // Copying off the server runs no command there, so read access is enough.
+                    return onConnection(saved, pool, args, Need.READ, timeout) { client ->
+                        val dest = File(root(), folder)
+                        val job = currentCoroutineContext()[Job]
+                        val sftp = SftpClient(client)
+                        val r = try {
+                            sftp.downloadTree(remote, dest, MAX_DOWNLOAD_FILES, maxBytes) { job?.isActive == false }
+                        } catch (e: IllegalArgumentException) {
+                            return@onConnection ToolResult.error("too_large_or_invalid", "Pick a smaller path or raise max_bytes.", e.message ?: "refused")
+                        } finally { sftp.close() }
+                        runCatching { onDownloaded(dest.walkTopDown().filter { it.isFile }.toList()) }
+                        ToolResult.ok(buildJsonObject {
+                            put("local_dir", dest.path)
+                            put("files", r.files)
+                            put("kept_existing", r.kept)
+                            put("bytes", r.bytes)
                         }.toString())
                     }
                 }

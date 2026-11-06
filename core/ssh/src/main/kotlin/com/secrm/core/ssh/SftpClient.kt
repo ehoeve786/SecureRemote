@@ -7,6 +7,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
 
@@ -89,6 +90,49 @@ class SftpClient(private val ssh: SshClientManager) {
         run {
             it.put(input, path, monitor(shouldCancel, onProgress), ChannelSftp.OVERWRITE)
             throwIfCancelled(shouldCancel)
+        }
+
+    data class TreeResult(val files: Int, val kept: Int, val bytes: Long)
+
+    /**
+     * Copies [path], a file or a folder with everything under it, into [dest]. Symlinks are skipped, so a link loop
+     * cannot recurse. A file already in [dest] at the remote size is kept, so a rerun resumes. Over [maxFiles] or
+     * [maxBytes] it fails before transferring anything. Files are written as `.part` and renamed when complete.
+     */
+    suspend fun downloadTree(path: String, dest: File, maxFiles: Int, maxBytes: Long, shouldCancel: () -> Boolean = { false }): TreeResult =
+        run { ch ->
+            val top = ch.lstat(path)
+            require(!top.isLink) { "$path is a symlink; give the path it points to" }
+            val name = path.trimEnd('/').substringAfterLast('/')
+            val plan = ArrayList<Triple<String, File, Long>>()
+            fun walk(remote: String, local: File) {
+                for (e in ch.ls(remote).filterIsInstance<ChannelSftp.LsEntry>()) {
+                    val n = e.filename
+                    if (n == "." || n == ".." || '/' in n || '\u0000' in n || e.attrs.isLink) continue
+                    val r = join(remote, n)
+                    if (e.attrs.isDir) walk(r, File(local, n))
+                    else if (e.attrs.isReg) {
+                        plan += Triple(r, File(local, n), e.attrs.size)
+                        require(plan.size <= maxFiles) { "More than $maxFiles files under $path" }
+                    }
+                }
+            }
+            if (top.isDir) walk(path, dest) else if (top.isReg && name.isNotEmpty() && name != "." && name != "..") plan += Triple(path, File(dest, name), top.size)
+            else error("$path is not a regular file or folder")
+            val total = plan.sumOf { it.third }
+            require(total <= maxBytes) { "$path holds $total bytes, over the $maxBytes limit" }
+            var kept = 0
+            for ((remote, local, size) in plan) {
+                if (local.length() == size && local.isFile) { kept++; continue }
+                local.parentFile?.mkdirs()
+                val part = File(local.path + ".part")
+                try {
+                    part.outputStream().use { ch.get(remote, it, monitor(shouldCancel) {}) }
+                    throwIfCancelled(shouldCancel)
+                } catch (t: Throwable) { part.delete(); throw t }
+                if (!part.renameTo(local)) throw java.io.IOException("Could not save ${local.path}")
+            }
+            TreeResult(plan.size, kept, total)
         }
 
     // The progress monitor only asks the library to stop; whether that surfaces as an error depends on the
