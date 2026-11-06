@@ -78,13 +78,15 @@ class McpSessionPool(
             evict(e)
         }
         val client = connectNew(conn, auth) ?: return null
-        return Entry(conn, auth, client).also { it.users = 1; entries[conn.name] = it }
+        // A rediscovered host was saved under its new address; store that, so the next call reuses this session.
+        val current = saved.find(conn.name)?.takeIf { it.copy(host = conn.host, routeByNetwork = conn.routeByNetwork) == conn } ?: conn
+        return Entry(current, auth, client).also { it.users = 1; entries[conn.name] = it }
     }
 
     /** Caller holds [lock]. Connects a new client for [conn], or records why it could not. */
     private suspend fun connectNew(conn: SavedConnection, auth: SshAuth): SshClientManager? {
         val client = newClient()
-        if (!client.connectSaved(conn, auth, saved, allowRediscover = false)) {
+        if (!client.connectSaved(conn, auth, saved, allowRediscover = conn.allowMcpRediscover)) {
             keyChanged[conn.name] = client.state.value is SshState.HostKeyChanged
             client.shutdown()
             return null

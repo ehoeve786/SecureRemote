@@ -467,7 +467,8 @@ object SshTools {
         } ?: if (pool.hostKeyChanged(conn.name)) ToolResult.error("host_key_changed",
             "The server's host key changed. The owner must trust the new key in the app before MCP can connect.",
             "Host key for '${conn.name}' has changed.")
-        else ToolResult.error("connect_failed", "Check host reachability and credentials.",
+        else ToolResult.error("connect_failed", if (conn.allowMcpRediscover) "Check host reachability and credentials."
+            else "Check host reachability and credentials. If its IP may have changed, the owner can turn on 'Find host if its IP changed' for this connection.",
             "SSH connect failed to ${conn.host}:${conn.port}")
     } catch (d: Denied) {
         d.result

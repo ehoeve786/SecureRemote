@@ -27,7 +27,9 @@ data class SavedConnection(
     val hostKey: String? = null,
     /** Opt-in: a connection is not reachable over MCP until its owner enables it. */
     val allowMcpExec: Boolean = false,
-    val allowMcpRead: Boolean = false
+    val allowMcpRead: Boolean = false,
+    /** Opt-in: lets an MCP connect search the phone's networks for this host if its address changed (pinned key only). */
+    val allowMcpRediscover: Boolean = false,
 )
 
 interface SavedConnections {
@@ -64,7 +66,7 @@ suspend fun SshClientManager.connectSaved(
     conn: SavedConnection,
     auth: SshAuth,
     saved: SavedConnections,
-    /** On for the owner's app and plugin; MCP passes false, so an agent never triggers a network probe. */
+    /** On for the owner's app and plugin; MCP passes the connection's [SavedConnection.allowMcpRediscover], off by default. */
     allowRediscover: Boolean = true,
     approvedKey: String? = null,
 ): Boolean {
