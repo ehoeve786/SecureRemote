@@ -30,9 +30,10 @@ class McpToolsTest {
         name = "box", host = "10.0.0.2", user = "me", hostKey = "1A2B", allowMcpExec = exec,
     )
 
-    private fun call(vararg conns: SavedConnection, tool: String, args: JsonObject): ToolResult {
+    private fun call(vararg conns: SavedConnection, tool: String, args: JsonObject, downloads: Boolean = true): ToolResult {
         val dispatcher = CallDispatcher().also {
-            SshTools.register(it, FakeSaved(conns.toList()), SshClientManager()) { snippets }
+            SshTools.register(it, FakeSaved(conns.toList()), SshClientManager(), { snippets },
+                downloadDir = if (downloads) ({ java.io.File("unused") }) else null)
         }
         return runBlocking { dispatcher.dispatch(Session("t", "test"), tool, args) }
     }
@@ -105,5 +106,27 @@ class McpToolsTest {
             put("connection", "box"); put("local_port", 8080)
         })
         assertEquals("not_permitted", r.errorCode)
+    }
+
+    @Test fun downloadRejectsAnUnsafeFolder() {
+        for (folder in listOf("../x", "a/b", "..", "")) {
+            val r = call(box(exec = true), tool = "ssh.download", args = buildJsonObject {
+                put("connection", "box"); put("remote_path", "/data"); put("folder", folder)
+            })
+            assertTrue("$folder -> ${r.errorCode}", r.errorCode == "invalid_argument" || (folder.isEmpty() && r.errorCode == "not_permitted"))
+        }
+    }
+
+    @Test fun downloadNeedsTheReadPermissionAndAFolder() {
+        val noRead = SavedConnection(name = "box", host = "10.0.0.2", user = "me", hostKey = "1A2B", allowMcpExec = true, allowMcpRead = false)
+        assertEquals("not_permitted", call(noRead, tool = "ssh.download", args = buildJsonObject {
+            put("connection", "box"); put("remote_path", "/data")
+        }).errorCode)
+        assertEquals("not_available", call(box(exec = true), tool = "ssh.download", downloads = false, args = buildJsonObject {
+            put("connection", "box"); put("remote_path", "/data")
+        }).errorCode)
+        assertEquals("missing_argument", call(box(exec = true), tool = "ssh.download", args = buildJsonObject {
+            put("connection", "box")
+        }).errorCode)
     }
 }

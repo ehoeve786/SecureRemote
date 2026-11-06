@@ -97,9 +97,13 @@ class SecureRemoteApp : Application() {
                 McpServerService.noteActivity()
             }
         })
-        mcpSessions = SshTools.register(dispatcher, connections, newClient()) {
-            snippets.list().map { NamedCommand(it.name, it.command) }
-        }
+        mcpSessions = SshTools.register(
+            dispatcher, connections, newClient(),
+            commands = { snippets.list().map { NamedCommand(it.name, it.command) } },
+            // Public Download, so files fetched over MCP can be shared or attached from the phone.
+            downloadDir = { java.io.File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS), "SecureRemote") },
+            onDownloaded = { files -> android.media.MediaScannerConnection.scanFile(this, files.map { it.path }.toTypedArray(), null, null) },
+        )
         watchNetwork()
     }
 

@@ -165,6 +165,31 @@ class SshIntegrationTest {
         }
     }
 
+    @Test fun downloadTreeCopiesAFolderSkipsLinksAndResumes() = runBlocking {
+        val src = Files.createDirectories(root.resolve("route/seg1"))
+        Files.writeString(root.resolve("route/a.txt"), "aaa")
+        Files.writeString(src.resolve("b.txt"), "bbbbb")
+        Files.createSymbolicLink(root.resolve("route/loop"), root.resolve("route"))
+        connectOrFail()
+        val sftp = SftpClient(ssh)
+        val dest = Files.createTempDirectory("dl").toFile()
+        try {
+            val home = sftp.home()
+            val first = sftp.downloadTree(SftpClient.join(home, "route"), dest, maxFiles = 10, maxBytes = 100)
+            assertEquals(SftpClient.TreeResult(files = 2, kept = 0, bytes = 8), first)
+            assertEquals("aaa", java.io.File(dest, "a.txt").readText())
+            assertEquals("bbbbb", java.io.File(dest, "seg1/b.txt").readText())
+            assertFalse(java.io.File(dest, "loop").exists())
+            assertEquals(2, sftp.downloadTree(SftpClient.join(home, "route"), dest, 10, 100).kept)
+            assertThrows(IllegalArgumentException::class.java) { runBlocking { sftp.downloadTree(SftpClient.join(home, "route"), dest, 10, 7) } }
+            assertThrows(IllegalArgumentException::class.java) { runBlocking { sftp.downloadTree(SftpClient.join(home, "route"), dest, 1, 100) } }
+            sftp.downloadTree(SftpClient.join(home, "hello.txt"), dest, 1, 100)
+            assertEquals("hi there", java.io.File(dest, "hello.txt").readText())
+        } finally {
+            sftp.close(); dest.deleteRecursively()
+        }
+    }
+
     @Test fun sftpWithoutAConnectionFailsCleanly() {
         assertThrows(IllegalStateException::class.java) { runBlocking { SftpClient(ssh).home() } }
     }
