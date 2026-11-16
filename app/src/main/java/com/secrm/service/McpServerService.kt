@@ -67,7 +67,11 @@ class McpServerService : Service() {
 
     override fun onStartCommand(i: Intent?, f: Int, s: Int): Int {
         when (i?.action) {
+            // null: Android re-created the service (START_STICKY) after killing the process. Tailscale
+            // resumes on its own then, so without this its proxy answers every agent with 502.
+            // If Android refuses a foreground start from the background, stop instead of crash-looping.
             START -> startServer()
+            null -> runCatching { startServer() }.onFailure { Log.w(TAG, "Restart refused: ${it.message}"); stopSelf() }
             STOP -> { stopServer(); stopSelf() }
         }
         return START_STICKY
