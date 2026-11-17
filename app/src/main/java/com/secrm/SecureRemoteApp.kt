@@ -122,9 +122,15 @@ class SecureRemoteApp : Application() {
             })
     }
 
-    /** Commands and secrets never reach the audit log; their length does, so the entry is still useful. */
+    /**
+     * Secrets never reach the audit log; their length does, so the entry is still useful. Commands are redacted the same
+     * way unless the user turned on full command logging; McpAuditLog still masks password=, bearer and key-like strings in them.
+     */
     private fun redacted(args: JsonObject) = JsonObject(args.mapValues { (k, v) ->
         when {
+            k == "command" && mcp.logFullCommands && v is JsonPrimitive && v.isString -> JsonPrimitive(
+                v.content.let { if (it.length > MAX_LOGGED_COMMAND) it.take(MAX_LOGGED_COMMAND) + "… [${it.length} chars]" else it }
+            )
             k in SECRET_ARGS -> JsonPrimitive("[redacted ${v.toString().length} chars]")
             // Snippet variables are values an agent passes in, often passwords. Keep their names, not their values.
             k == "variables" && v is JsonObject -> JsonObject(v.mapValues { (_, value) ->
@@ -136,5 +142,7 @@ class SecureRemoteApp : Application() {
 
     private companion object {
         val SECRET_ARGS = setOf("command", "password", "secret", "token", "passphrase")
+        /** Keeps one long script from pushing older entries out of the 1 MB log. */
+        const val MAX_LOGGED_COMMAND = 4_000
     }
 }

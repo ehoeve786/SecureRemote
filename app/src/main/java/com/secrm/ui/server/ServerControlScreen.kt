@@ -319,6 +319,16 @@ private fun McpSection(app: SecureRemoteApp, onOpenAudit: () -> Unit) {
             }
 
             Spacer(Modifier.height(Space.sm))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Log full commands", style = MaterialTheme.typography.bodyLarge)
+                    Text("Audit log keeps each command an agent runs, not just its length. password=, bearer tokens and long keys are masked; other secrets in a command are kept.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Switch(app.mcp.logFullCommands, app.mcp::chooseLogFullCommands)
+            }
+
+            Spacer(Modifier.height(Space.sm))
             PillButton("View audit log", PillStyle.Ghost, Modifier.fillMaxWidth(), onClick = onOpenAudit)
 
             AgentTokensSection(app)

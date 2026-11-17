@@ -5,7 +5,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 
-/** When the MCP server stops by itself. Compose state, so the settings screen updates as the values change. */
+/** When the MCP server stops by itself, and what its audit log keeps. Compose state, so the settings screen updates as the values change. */
 class McpPrefs(context: Context) {
     private val p = context.getSharedPreferences("mcp", Context.MODE_PRIVATE)
 
@@ -16,6 +16,11 @@ class McpPrefs(context: Context) {
     var lockOnScreenOff by mutableStateOf(p.getBoolean("lock_on_screen_off", false))
         private set
 
+    /** Write ssh.exec commands to the audit log in full instead of only their length. Off by default: commands can hold secrets. */
+    var logFullCommands by mutableStateOf(p.getBoolean("log_full_commands", false))
+        private set
+
     fun chooseIdleMinutes(m: Int) { idleMinutes = m; p.edit().putInt("idle_minutes", m).apply() }
     fun chooseLockOnScreenOff(on: Boolean) { lockOnScreenOff = on; p.edit().putBoolean("lock_on_screen_off", on).apply() }
+    fun chooseLogFullCommands(on: Boolean) { logFullCommands = on; p.edit().putBoolean("log_full_commands", on).apply() }
 }
